@@ -16,6 +16,14 @@
 
 ---
 
+<div align="center">
+
+![Tab Out Dashboard](screenshot.png)
+
+</div>
+
+---
+
 Tab Out replaces your Chrome new tab page with a dashboard that shows everything you have open — grouped by domain, with landing pages (Gmail, X, LinkedIn, etc.) pulled into their own group for easy cleanup. Close tabs with a satisfying swoosh + confetti.
 
 Built for people who open too many tabs and never close them.
