@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -57,7 +58,8 @@
     #fallback h1 {
       font-size: 1.6rem;
       font-weight: bold;
-      color: #c8713a; /* amber — matches the extension icon */
+      color: #c8713a;
+      /* amber — matches the extension icon */
     }
 
     #fallback p {
@@ -77,20 +79,17 @@
     }
   </style>
 </head>
+
 <body>
 
   <!-- Primary view: the full-screen dashboard iframe -->
-  <iframe
-    id="dashboard-frame"
-    src="http://localhost:3456"
-    title="Tab Out Dashboard"
-  ></iframe>
+  <iframe id="dashboard-frame" src="http://localhost:3456" title="Tab Out Dashboard"></iframe>
 
   <!-- Fallback view: shown when the server at localhost:3456 is not reachable -->
   <div id="fallback" class="hidden">
     <h1>Tab Out is not running</h1>
     <p>
-      The dashboard server isn't detected at <code>localhost:3456</code>.<br/>
+      The dashboard server isn't detected at <code>localhost:3456</code>.<br />
       To start it, open your terminal and run:
     </p>
     <p><code>cd tab-out &amp;&amp; npm start</code></p>
@@ -102,4 +101,5 @@
   <!-- Bridge script: connects this page to the Chrome tabs API -->
   <script src="newtab.js"></script>
 </body>
+
 </html>

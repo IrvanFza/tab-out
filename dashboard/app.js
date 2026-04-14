@@ -17,6 +17,89 @@ if (localStorage.getItem('tabout-dark-mode') === 'true') {
   document.body.classList.add('dark-mode');
 }
 
+/* ----------------------------------------------------------------
+   APP CONFIG — fetched from server, controls all customizations
+   ---------------------------------------------------------------- */
+let appConfig = {
+  userName: '',
+  pomodoroWorkMinutes: 25,
+  pomodoroBreakMinutes: 5,
+  clockShowSeconds: false,
+  clockFormat: '12',
+  quoteText: '',
+  quoteAuthor: '',
+  useDynamicQuote: false,
+  searchEngine: 'google',
+  quickLinks: [],
+};
+
+const SEARCH_ENGINES = {
+  google: { name: 'Google', action: 'https://www.google.com/search', param: 'q' },
+  bing: { name: 'Bing', action: 'https://www.bing.com/search', param: 'q' },
+  duckduckgo: { name: 'DuckDuckGo', action: 'https://duckduckgo.com/', param: 'q' },
+  brave: { name: 'Brave', action: 'https://search.brave.com/search', param: 'q' },
+  ecosia: { name: 'Ecosia', action: 'https://www.ecosia.org/search', param: 'q' },
+};
+
+async function loadAppConfig() {
+  try {
+    const res = await fetch('/api/config');
+    if (res.ok) {
+      const data = await res.json();
+      appConfig = { ...appConfig, ...data };
+    }
+  } catch { /* use defaults */ }
+}
+
+async function saveAppConfig(updates) {
+  try {
+    const res = await fetch('/api/config', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      appConfig = { ...appConfig, ...data };
+      applyConfigToUI();
+      showToast('Settings saved');
+    } else {
+      const err = await res.json();
+      showToast(err.error || 'Failed to save settings');
+    }
+  } catch {
+    showToast('Failed to save settings');
+  }
+}
+
+function applyConfigToUI() {
+  const greetingEl = document.getElementById('greeting');
+  if (greetingEl) greetingEl.textContent = getGreeting();
+
+  const dateEl = document.getElementById('dateDisplay');
+  if (dateEl) dateEl.textContent = getDateDisplay();
+
+  const searchForm = document.getElementById('searchForm');
+  const searchInput = document.getElementById('searchInput');
+  if (searchForm && searchInput) {
+    const engine = SEARCH_ENGINES[appConfig.searchEngine] || SEARCH_ENGINES.google;
+    searchForm.action = engine.action;
+    searchForm.method = 'get';
+    searchInput.name = engine.param;
+    searchInput.placeholder = `Search ${engine.name}...`;
+  }
+
+  const clockEl = document.getElementById('headerClock');
+  if (clockEl) {
+    const opts = { hour: 'numeric', minute: '2-digit', hour12: appConfig.clockFormat !== '24' };
+    if (appConfig.clockShowSeconds) opts.second = '2-digit';
+    clockEl.textContent = new Date().toLocaleTimeString('en-US', opts);
+  }
+
+  resetPomodoro();
+  renderQuickLinks();
+}
+
 const ICON_SUN = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>';
 const ICON_MOON = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" /></svg>';
 
@@ -177,11 +260,34 @@ function pausePomodoro() {
 function resetPomodoro() {
   pomodoroState.running = false;
   pomodoroState.isBreak = false;
-  pomodoroState.secondsLeft = 25 * 60;
+  pomodoroState.secondsLeft = (appConfig.pomodoroWorkMinutes || 25) * 60;
   clearInterval(pomodoroState.intervalId);
   pomodoroState.intervalId = null;
   const btn = document.querySelector('[data-action="pomodoro-toggle"]');
   if (btn) btn.innerHTML = '&#9654;';
+  savePomodoroState();
+  updatePomodoroDisplay();
+}
+
+function pomodoroTick() {
+  pomodoroState.secondsLeft--;
+  pomodoroState.lastTick = Date.now();
+  if (pomodoroState.secondsLeft <= 0) {
+    pomodoroState.running = false;
+    clearInterval(pomodoroState.intervalId);
+    pomodoroState.intervalId = null;
+    if (pomodoroState.isBreak) {
+      showToast('Break over! Time to focus.');
+      pomodoroState.isBreak = false;
+      pomodoroState.secondsLeft = (appConfig.pomodoroWorkMinutes || 25) * 60;
+    } else {
+      showToast('Time for a break!');
+      pomodoroState.isBreak = true;
+      pomodoroState.secondsLeft = (appConfig.pomodoroBreakMinutes || 5) * 60;
+    }
+    const btn = document.querySelector('[data-action="pomodoro-toggle"]');
+    if (btn) btn.innerHTML = '&#9654;';
+  }
   savePomodoroState();
   updatePomodoroDisplay();
 }
@@ -220,6 +326,9 @@ function renderRecentlyClosed() {
    QUICK LINKS — render + drag-to-reorder
    ---------------------------------------------------------------- */
 function getQuickLinks() {
+  if (appConfig.quickLinks && appConfig.quickLinks.length > 0) {
+    return appConfig.quickLinks;
+  }
   const saved = localStorage.getItem('tabout-quick-links-order');
   if (saved) {
     try { return JSON.parse(saved); } catch { /* fall through */ }
@@ -544,14 +653,14 @@ function shootConfetti(x, y) {
     document.body.appendChild(el);
 
     // Physics: random angle and speed for the outward burst
-    const angle  = Math.random() * Math.PI * 2;           // random direction (radians)
-    const speed  = 60 + Math.random() * 120;              // px/second
-    const vx     = Math.cos(angle) * speed;               // horizontal velocity
-    const vy     = Math.sin(angle) * speed - 80;          // vertical: bias upward a bit
+    const angle = Math.random() * Math.PI * 2;           // random direction (radians)
+    const speed = 60 + Math.random() * 120;              // px/second
+    const vx = Math.cos(angle) * speed;               // horizontal velocity
+    const vy = Math.sin(angle) * speed - 80;          // vertical: bias upward a bit
     const gravity = 200;                                   // downward pull (px/s²)
 
     const startTime = performance.now();
-    const duration  = 700 + Math.random() * 200;          // 700–900ms
+    const duration = 700 + Math.random() * 200;          // 700–900ms
 
     // Animate with requestAnimationFrame for buttery-smooth motion
     function frame(now) {
@@ -597,8 +706,8 @@ function animateCardOut(card) {
 
   // Get the card's center position on screen for the confetti origin
   const rect = card.getBoundingClientRect();
-  const cx = rect.left + rect.width  / 2;
-  const cy = rect.top  + rect.height / 2;
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
 
   // Shoot confetti from the card's center
   shootConfetti(cx, cy);
@@ -672,8 +781,8 @@ function timeAgo(dateStr) {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1)   return 'just now';
-  if (diffMins < 60)  return diffMins + ' min ago';
+  if (diffMins < 1) return 'just now';
+  if (diffMins < 60) return diffMins + ' min ago';
   if (diffHours < 24) return diffHours + ' hr' + (diffHours !== 1 ? 's' : '') + ' ago';
   if (diffDays === 1) return 'yesterday';
   return diffDays + ' days ago';
@@ -688,9 +797,14 @@ function timeAgo(dateStr) {
  */
 function getGreeting() {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
+  let greeting;
+  if (hour < 12) greeting = 'Good morning';
+  else if (hour < 17) greeting = 'Good afternoon';
+  else greeting = 'Good evening';
+  if (appConfig.userName && appConfig.userName.trim()) {
+    greeting += ', ' + appConfig.userName.trim();
+  }
+  return greeting;
 }
 
 /**
@@ -770,72 +884,72 @@ function getOpenTabsForMission(missionUrls) {
 // Map of known domains → friendly display names.
 // Covers the most common sites; everything else gets a smart fallback.
 const FRIENDLY_DOMAINS = {
-  'github.com':           'GitHub',
-  'www.github.com':       'GitHub',
-  'gist.github.com':      'GitHub Gist',
-  'youtube.com':          'YouTube',
-  'www.youtube.com':      'YouTube',
-  'music.youtube.com':    'YouTube Music',
-  'x.com':                'X',
-  'www.x.com':            'X',
-  'twitter.com':          'X',
-  'www.twitter.com':      'X',
-  'reddit.com':           'Reddit',
-  'www.reddit.com':       'Reddit',
-  'old.reddit.com':       'Reddit',
-  'substack.com':         'Substack',
-  'www.substack.com':     'Substack',
-  'medium.com':           'Medium',
-  'www.medium.com':       'Medium',
-  'linkedin.com':         'LinkedIn',
-  'www.linkedin.com':     'LinkedIn',
-  'stackoverflow.com':    'Stack Overflow',
-  'www.stackoverflow.com':'Stack Overflow',
+  'github.com': 'GitHub',
+  'www.github.com': 'GitHub',
+  'gist.github.com': 'GitHub Gist',
+  'youtube.com': 'YouTube',
+  'www.youtube.com': 'YouTube',
+  'music.youtube.com': 'YouTube Music',
+  'x.com': 'X',
+  'www.x.com': 'X',
+  'twitter.com': 'X',
+  'www.twitter.com': 'X',
+  'reddit.com': 'Reddit',
+  'www.reddit.com': 'Reddit',
+  'old.reddit.com': 'Reddit',
+  'substack.com': 'Substack',
+  'www.substack.com': 'Substack',
+  'medium.com': 'Medium',
+  'www.medium.com': 'Medium',
+  'linkedin.com': 'LinkedIn',
+  'www.linkedin.com': 'LinkedIn',
+  'stackoverflow.com': 'Stack Overflow',
+  'www.stackoverflow.com': 'Stack Overflow',
   'news.ycombinator.com': 'Hacker News',
-  'google.com':           'Google',
-  'www.google.com':       'Google',
-  'mail.google.com':      'Gmail',
-  'docs.google.com':      'Google Docs',
-  'drive.google.com':     'Google Drive',
-  'calendar.google.com':  'Google Calendar',
-  'meet.google.com':      'Google Meet',
-  'gemini.google.com':    'Gemini',
-  'chatgpt.com':          'ChatGPT',
-  'www.chatgpt.com':      'ChatGPT',
-  'chat.openai.com':      'ChatGPT',
-  'claude.ai':            'Claude',
-  'www.claude.ai':        'Claude',
-  'code.claude.com':      'Claude Code',
-  'notion.so':            'Notion',
-  'www.notion.so':        'Notion',
-  'figma.com':            'Figma',
-  'www.figma.com':        'Figma',
-  'slack.com':            'Slack',
-  'app.slack.com':        'Slack',
-  'discord.com':          'Discord',
-  'www.discord.com':      'Discord',
-  'wikipedia.org':        'Wikipedia',
-  'en.wikipedia.org':     'Wikipedia',
-  'amazon.com':           'Amazon',
-  'www.amazon.com':       'Amazon',
-  'netflix.com':          'Netflix',
-  'www.netflix.com':      'Netflix',
-  'spotify.com':          'Spotify',
-  'open.spotify.com':     'Spotify',
-  'vercel.com':           'Vercel',
-  'www.vercel.com':       'Vercel',
-  'npmjs.com':            'npm',
-  'www.npmjs.com':        'npm',
-  'developer.mozilla.org':'MDN',
-  'arxiv.org':            'arXiv',
-  'www.arxiv.org':        'arXiv',
-  'huggingface.co':       'Hugging Face',
-  'www.huggingface.co':   'Hugging Face',
-  'producthunt.com':      'Product Hunt',
-  'www.producthunt.com':  'Product Hunt',
-  'xiaohongshu.com':      'RedNote',
-  'www.xiaohongshu.com':  'RedNote',
-  'local-files':          'Local Files',
+  'google.com': 'Google',
+  'www.google.com': 'Google',
+  'mail.google.com': 'Gmail',
+  'docs.google.com': 'Google Docs',
+  'drive.google.com': 'Google Drive',
+  'calendar.google.com': 'Google Calendar',
+  'meet.google.com': 'Google Meet',
+  'gemini.google.com': 'Gemini',
+  'chatgpt.com': 'ChatGPT',
+  'www.chatgpt.com': 'ChatGPT',
+  'chat.openai.com': 'ChatGPT',
+  'claude.ai': 'Claude',
+  'www.claude.ai': 'Claude',
+  'code.claude.com': 'Claude Code',
+  'notion.so': 'Notion',
+  'www.notion.so': 'Notion',
+  'figma.com': 'Figma',
+  'www.figma.com': 'Figma',
+  'slack.com': 'Slack',
+  'app.slack.com': 'Slack',
+  'discord.com': 'Discord',
+  'www.discord.com': 'Discord',
+  'wikipedia.org': 'Wikipedia',
+  'en.wikipedia.org': 'Wikipedia',
+  'amazon.com': 'Amazon',
+  'www.amazon.com': 'Amazon',
+  'netflix.com': 'Netflix',
+  'www.netflix.com': 'Netflix',
+  'spotify.com': 'Spotify',
+  'open.spotify.com': 'Spotify',
+  'vercel.com': 'Vercel',
+  'www.vercel.com': 'Vercel',
+  'npmjs.com': 'npm',
+  'www.npmjs.com': 'npm',
+  'developer.mozilla.org': 'MDN',
+  'arxiv.org': 'arXiv',
+  'www.arxiv.org': 'arXiv',
+  'huggingface.co': 'Hugging Face',
+  'www.huggingface.co': 'Hugging Face',
+  'producthunt.com': 'Product Hunt',
+  'www.producthunt.com': 'Product Hunt',
+  'xiaohongshu.com': 'RedNote',
+  'www.xiaohongshu.com': 'RedNote',
+  'local-files': 'Local Files',
 };
 
 /**
@@ -848,11 +962,23 @@ const FRIENDLY_DOMAINS = {
  * 3. Fallback: strip "www.", strip TLD, capitalize
  *    (e.g. "minttr.com" → "Minttr", "blog.example.co.uk" → "Blog Example")
  */
+function getTabFavicon(tab) {
+  if (tab.favIconUrl) return tab.favIconUrl;
+  try {
+    const domain = new URL(tab.url).hostname;
+    return domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
+  } catch { return ''; }
+}
+
 function friendlyDomain(hostname) {
   if (!hostname) return '';
 
-  // Direct lookup
   if (FRIENDLY_DOMAINS[hostname]) return FRIENDLY_DOMAINS[hostname];
+
+  if (hostname === 'local-files') return 'Local Files';
+
+  // chrome-extension:// hostnames are extension IDs — show "Extensions" for the card
+  if (/^[a-z]{32}$/.test(hostname)) return 'Extensions';
 
   // Check for *.substack.com pattern (e.g. "lenny.substack.com" → "Lenny's Substack")
   if (hostname.endsWith('.substack.com') && hostname !== 'substack.com') {
@@ -1051,8 +1177,8 @@ const ICONS = {
 
    domainGroups is populated by renderStaticDashboard().
    ---------------------------------------------------------------- */
-let domainGroups    = [];
-let duplicateTabs   = [];
+let domainGroups = [];
+let duplicateTabs = [];
 
 
 /* ----------------------------------------------------------------
@@ -1071,10 +1197,10 @@ function getRealTabs() {
     const url = t.url || '';
     return (
       !url.startsWith('chrome://') &&
-      !url.startsWith('chrome-extension://') &&
       !url.startsWith('about:') &&
       !url.startsWith('edge://') &&
-      !url.startsWith('brave://')
+      !url.startsWith('brave://') &&
+      !t.isTabOut
     );
   });
 }
@@ -1090,7 +1216,7 @@ function checkTabOutDupes() {
   // Each tab has an isTabOut flag set by the extension's handleGetTabs()
   const tabOutTabs = openTabs.filter(t => t.isTabOut);
 
-  const banner  = document.getElementById('tabOutDupeBanner');
+  const banner = document.getElementById('tabOutDupeBanner');
   const countEl = document.getElementById('tabOutDupeCount');
   if (!banner) return;
 
@@ -1119,15 +1245,13 @@ function checkTabOutDupes() {
  */
 function buildOverflowChips(hiddenTabs, urlCounts = {}) {
   const hiddenChips = hiddenTabs.map(tab => {
-    const label   = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), '');
-    const count   = urlCounts[tab.url] || 1;
+    const label = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), '');
+    const count = urlCounts[tab.url] || 1;
     const dupeTag = count > 1 ? ` <span class="chip-dupe-badge">(${count}x)</span>` : '';
     const chipClass = count > 1 ? ' chip-has-dupes' : '';
     const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
     const safeTitle = label.replace(/"/g, '&quot;');
-    let domain = '';
-    try { domain = new URL(tab.url).hostname; } catch {}
-    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
+    const faviconUrl = getTabFavicon(tab);
     return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
       ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
       <span class="chip-text">${label}</span>${dupeTag}
@@ -1159,10 +1283,10 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}) {
  * gray status bar (amber if duplicates exist).
  */
 function renderDomainCard(group, groupIndex) {
-  const tabs      = group.tabs || [];
-  const tabCount  = tabs.length;
+  const tabs = group.tabs || [];
+  const tabCount = tabs.length;
   const isLanding = group.domain === '__landing-pages__';
-  const stableId  = 'domain-' + group.domain.replace(/[^a-z0-9]/g, '-');
+  const stableId = 'domain-' + group.domain.replace(/[^a-z0-9]/g, '-');
 
   // Detect duplicates within this domain group (exact URL match)
   const urlCounts = {};
@@ -1196,7 +1320,7 @@ function renderDomainCard(group, groupIndex) {
     }
   }
   const visibleTabs = uniqueTabs.slice(0, 8);
-  const extraCount  = uniqueTabs.length - visibleTabs.length;
+  const extraCount = uniqueTabs.length - visibleTabs.length;
   const pageChips = visibleTabs.map(tab => {
     let label = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), group.domain);
     // For localhost tabs, prepend the port number so you can tell projects apart
@@ -1205,17 +1329,15 @@ function renderDomainCard(group, groupIndex) {
       if (parsed.hostname === 'localhost' && parsed.port) {
         label = `${parsed.port} ${label}`;
       }
-    } catch {}
-    const count   = urlCounts[tab.url];
+    } catch { }
+    const count = urlCounts[tab.url];
     const dupeTag = count > 1
       ? ` <span class="chip-dupe-badge">(${count}x)</span>`
       : '';
     const chipClass = count > 1 ? ' chip-has-dupes' : '';
     const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
     const safeTitle = label.replace(/"/g, '&quot;');
-    let domain = '';
-    try { domain = new URL(tab.url).hostname; } catch {}
-    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
+    const faviconUrl = getTabFavicon(tab);
     return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
       ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
       <span class="chip-text">${label}</span>${dupeTag}
@@ -1285,13 +1407,13 @@ function renderDomainCard(group, groupIndex) {
  * load.
  */
 async function renderDeferredColumn() {
-  const column    = document.getElementById('deferredColumn');
-  const list      = document.getElementById('deferredList');
-  const empty     = document.getElementById('deferredEmpty');
-  const countEl   = document.getElementById('deferredCount');
+  const column = document.getElementById('deferredColumn');
+  const list = document.getElementById('deferredList');
+  const empty = document.getElementById('deferredEmpty');
+  const countEl = document.getElementById('deferredCount');
   const archiveEl = document.getElementById('deferredArchive');
   const archiveCountEl = document.getElementById('archiveCount');
-  const archiveList    = document.getElementById('archiveList');
+  const archiveList = document.getElementById('archiveList');
 
   if (!column) return;
 
@@ -1300,7 +1422,7 @@ async function renderDeferredColumn() {
     if (!res.ok) throw new Error('Failed to fetch deferred tabs');
     const data = await res.json();
 
-    const active   = data.active || [];
+    const active = data.active || [];
     const archived = data.archived || [];
 
     // Show or hide the entire column based on whether there's anything to show
@@ -1346,7 +1468,7 @@ async function renderDeferredColumn() {
  */
 function renderDeferredItem(item) {
   let domain = '';
-  try { domain = new URL(item.url).hostname.replace(/^www\./, ''); } catch {}
+  try { domain = new URL(item.url).hostname.replace(/^www\./, ''); } catch { }
   const faviconUrl = `https://www.google.com/s2/favicons?domain=${domain}&sz=16`;
   const ago = timeAgo(item.deferred_at);
 
@@ -1376,7 +1498,7 @@ function renderDeferredItem(item) {
  */
 function renderArchiveItem(item) {
   let domain = '';
-  try { domain = new URL(item.url).hostname.replace(/^www\./, ''); } catch {}
+  try { domain = new URL(item.url).hostname.replace(/^www\./, ''); } catch { }
   const ago = item.archived_at ? timeAgo(item.archived_at) : '';
 
   return `
@@ -1390,9 +1512,46 @@ function renderArchiveItem(item) {
 
 
 /* ----------------------------------------------------------------
+   LANDING PAGE PATTERNS
+
+   Landing pages are homepages, inboxes, and feeds that you keep open
+   out of habit. These get pulled into their own group so you can close
+   them all at once. A specific email thread or tweet is NOT a landing
+   page — those belong with their domain.
+   ---------------------------------------------------------------- */
+const LANDING_PAGE_PATTERNS = [
+  {
+    hostname: 'mail.google.com', test: (p, h) => {
+      // Only the inbox itself, not individual emails.
+      // Gmail inbox URLs end with #inbox (no message ID after it)
+      // Individual emails look like #inbox/FMfcgz...
+      return !h.includes('#inbox/') && !h.includes('#sent/') && !h.includes('#search/');
+    }
+  },
+  { hostname: 'x.com', pathExact: ['/home'] },
+  { hostname: 'www.linkedin.com', pathExact: ['/'] },
+  { hostname: 'github.com', pathExact: ['/'] },
+  { hostname: 'www.youtube.com', pathExact: ['/'] },
+];
+
+function isLandingPage(url) {
+  try {
+    const parsed = new URL(url);
+    return LANDING_PAGE_PATTERNS.some(p => {
+      if (parsed.hostname !== p.hostname) return false;
+      if (p.test) return p.test(parsed.pathname, url);
+      if (p.pathPrefix) return parsed.pathname.startsWith(p.pathPrefix);
+      if (p.pathExact) return p.pathExact.includes(parsed.pathname);
+      return parsed.pathname === '/';
+    });
+  } catch { return false; }
+}
+
+/* ----------------------------------------------------------------
    MAIN DASHBOARD RENDERER
 
-   renderStaticDashboard() — groups open tabs by domain.
+   renderStaticDashboard() — sets up static UI, then calls
+   refreshDynamicContent() for the tab data.
    ---------------------------------------------------------------- */
 
 /**
@@ -1408,17 +1567,23 @@ function renderArchiveItem(item) {
 async function renderStaticDashboard() {
   // --- Header: greeting + date ---
   const greetingEl = document.getElementById('greeting');
-  const dateEl     = document.getElementById('dateDisplay');
+  const dateEl = document.getElementById('dateDisplay');
   if (greetingEl) greetingEl.textContent = getGreeting();
-  if (dateEl)     dateEl.textContent     = getDateDisplay();
+  if (dateEl) dateEl.textContent = getDateDisplay();
 
   // --- Header: live clock ---
   const clockEl = document.getElementById('headerClock');
   if (clockEl) {
     function updateClock() {
-      clockEl.textContent = new Date().toLocaleTimeString('en-US', {
-        hour: 'numeric', minute: '2-digit', hour12: true
-      });
+      const opts = {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: appConfig.clockFormat !== '24',
+      };
+      if (appConfig.clockShowSeconds) {
+        opts.second = '2-digit';
+      }
+      clockEl.textContent = new Date().toLocaleTimeString('en-US', opts);
     }
     updateClock();
     setInterval(updateClock, 1000);
@@ -1442,13 +1607,6 @@ async function renderStaticDashboard() {
   // --- Quick links ---
   renderQuickLinks();
 
-  // --- Daily quote ---
-  const quoteEl = document.getElementById('dailyQuote');
-  if (quoteEl) {
-    const q = getDailyQuote();
-    quoteEl.innerHTML = `\u201c${q.text}\u201d <span class="quote-author">\u2014 ${q.author}</span>`;
-  }
-
   // --- Weather ---
   renderWeather();
 
@@ -1464,45 +1622,105 @@ async function renderStaticDashboard() {
     }
   }
 
-  // ── Step 1: Fetch open tabs ───────────────────────────────────────────────
+  // ── Fetch tabs + render dynamic content ────────────────────────────────
+  await refreshDynamicContent();
+}
+
+/**
+ * fetchDynamicQuote()
+ *
+ * Fetches the quote of the day from ZenQuotes API.
+ * Caches the result in localStorage for 24 hours to avoid
+ * hitting the API on every page load / refresh cycle.
+ *
+ * Returns { text, author } or null on failure.
+ */
+let _lastQuote = null;
+let _lastQuoteTime = 0;
+const QUOTE_THROTTLE_MS = 30_000;
+
+async function fetchDynamicQuote() {
+  const now = Date.now();
+  if (_lastQuote && now - _lastQuoteTime < QUOTE_THROTTLE_MS) {
+    return _lastQuote;
+  }
+
+  try {
+    const resp = await fetch('/api/quote');
+    if (resp.ok) {
+      const { text, author } = await resp.json();
+      if (text) {
+        _lastQuote = { text, author };
+        _lastQuoteTime = now;
+        return _lastQuote;
+      }
+    }
+  } catch {
+    // API unavailable — fall through
+  }
+  return _lastQuote;
+}
+
+/**
+ * refreshQuote()
+ *
+ * Renders the daily quote into the dashboard.
+ * If useDynamicQuote is enabled, fetches from ZenQuotes API.
+ * Otherwise uses the manual quote from config.
+ */
+async function refreshQuote() {
+  const quoteEl = document.getElementById('dailyQuote');
+  if (!quoteEl) return;
+
+  let text = '';
+  let author = '';
+
+  if (appConfig.useDynamicQuote) {
+    const dynamic = await fetchDynamicQuote();
+    if (dynamic) {
+      text = dynamic.text;
+      author = dynamic.author;
+    }
+  }
+
+  // Fall back to manual quote if dynamic is off or failed
+  if (!text) {
+    text = (appConfig.quoteText || '').trim();
+    author = (appConfig.quoteAuthor || '').trim();
+  }
+
+  if (text) {
+    quoteEl.innerHTML = `\u201c${text}\u201d${author ? ` <span class="quote-author">\u2014 ${author}</span>` : ''}`;
+    quoteEl.style.display = 'block';
+  } else {
+    quoteEl.style.display = 'none';
+  }
+}
+
+/**
+ * refreshDynamicContent()
+ *
+ * Refreshes only the dynamic parts of the dashboard:
+ * - Open tabs (fetched from the extension)
+ * - Tab domain cards
+ * - Footer stats
+ * - Duplicate tab checks
+ * - Saved for later list
+ * - Recently closed tabs
+ * - Daily quote
+ *
+ * Safe to call repeatedly — no event listeners are attached,
+ * no intervals are created. Used by the 30-second auto-refresh.
+ */
+async function refreshDynamicContent() {
+  // ── Refresh quote ─────────────────────────────────────────────────────────
+  refreshQuote();
+
+  // ── Fetch open tabs ───────────────────────────────────────────────────────
   await fetchOpenTabs();
   const realTabs = getRealTabs();
 
-  // ── Step 3: Group open tabs by domain ────────────────────────────────────
-  // This is pure JavaScript — no AI, no API calls. We extract the hostname
-  // from each tab URL and group them together.
-  //
-  // Special case: "landing pages" — homepages / inboxes / feeds that you
-  // keep open out of habit. These get pulled into their own group so you
-  // can close them all at once instead of hunting across domain cards.
-  // Landing pages are homepages, inboxes, and feeds. A specific email thread
-  // or a specific tweet is NOT a landing page — those belong with their domain.
-  const LANDING_PAGE_PATTERNS = [
-    { hostname: 'mail.google.com',  test: (p, h) => {
-      // Only the inbox itself, not individual emails.
-      // Gmail inbox URLs end with #inbox (no message ID after it)
-      // Individual emails look like #inbox/FMfcgz...
-      return !h.includes('#inbox/') && !h.includes('#sent/') && !h.includes('#search/');
-    }},
-    { hostname: 'x.com',                       pathExact: ['/home'] },
-    { hostname: 'www.linkedin.com',            pathExact: ['/'] },
-    { hostname: 'github.com',                  pathExact: ['/'] },
-    { hostname: 'www.youtube.com',             pathExact: ['/'] },
-  ];
-
-  function isLandingPage(url) {
-    try {
-      const parsed = new URL(url);
-      return LANDING_PAGE_PATTERNS.some(p => {
-        if (parsed.hostname !== p.hostname) return false;
-        if (p.test)       return p.test(parsed.pathname, url);
-        if (p.pathPrefix) return parsed.pathname.startsWith(p.pathPrefix);
-        if (p.pathExact)  return p.pathExact.includes(parsed.pathname);
-        return parsed.pathname === '/';
-      });
-    } catch { return false; }
-  }
-
+  // ── Group open tabs by domain ─────────────────────────────────────────────
   domainGroups = [];
   const groupMap = {};
   const landingTabs = [];
@@ -1516,9 +1734,12 @@ async function renderStaticDashboard() {
       }
 
       // file:// URLs have no hostname — group them under "Local Files"
+      // chrome-extension:// URLs — group them under "Extensions"
       let hostname;
       if (tab.url && tab.url.startsWith('file://')) {
         hostname = 'local-files';
+      } else if (tab.url && tab.url.startsWith('chrome-extension://')) {
+        hostname = new URL(tab.url).hostname;
       } else {
         hostname = new URL(tab.url).hostname;
       }
@@ -1553,14 +1774,13 @@ async function renderStaticDashboard() {
     return b.tabs.length - a.tabs.length;
   });
 
-  // ── Step 4: Render domain cards ───────────────────────────────────────────
-  const openTabsSection      = document.getElementById('openTabsSection');
-  const openTabsMissionsEl   = document.getElementById('openTabsMissions');
+  // ── Render domain cards ───────────────────────────────────────────────────
+  const openTabsSection = document.getElementById('openTabsSection');
+  const openTabsMissionsEl = document.getElementById('openTabsMissions');
   const openTabsSectionCount = document.getElementById('openTabsSectionCount');
   const openTabsSectionTitle = document.getElementById('openTabsSectionTitle');
 
   if (domainGroups.length > 0 && openTabsSection) {
-    if (openTabsSectionTitle) openTabsSectionTitle.textContent = 'Open tabs';
     openTabsSectionCount.innerHTML = `${domainGroups.length} domain${domainGroups.length !== 1 ? 's' : ''} &nbsp;&middot;&nbsp; <button class="action-btn close-tabs" data-action="close-all-open-tabs" style="font-size:11px;padding:3px 10px;">${ICONS.close} Close all ${realTabs.length} tabs</button>`;
     openTabsMissionsEl.innerHTML = domainGroups
       .map((g, idx) => renderDomainCard(g, idx))
@@ -1577,10 +1797,10 @@ async function renderStaticDashboard() {
   // ── Check for duplicate Tab Out tabs ────────────────────────────────────
   checkTabOutDupes();
 
-  // ── Step 9: Render the "Saved for Later" checklist column ────────────────
+  // ── Render the "Saved for Later" checklist column ────────────────────────
   await renderDeferredColumn();
 
-  // ── Step 10: Render recently closed tabs ────────────────────────────────
+  // ── Render recently closed tabs ─────────────────────────────────────────
   renderRecentlyClosed();
 }
 
@@ -1591,6 +1811,9 @@ async function renderStaticDashboard() {
  * Entry point — just calls renderStaticDashboard().
  */
 async function renderDashboard() {
+  await loadAppConfig();
+  applyConfigToUI();
+  initSettingsPanel();
   await renderStaticDashboard();
 }
 
@@ -1613,7 +1836,7 @@ document.addEventListener('click', async (e) => {
 
   if (!actionEl) return; // click wasn't on an action button
 
-  const action    = actionEl.dataset.action;
+  const action = actionEl.dataset.action;
   const missionId = actionEl.dataset.missionId;
 
   // --- Pomodoro controls ---
@@ -1716,7 +1939,7 @@ document.addEventListener('click', async (e) => {
   // ---- defer-single-tab: save one tab for later, then close it ----
   if (action === 'defer-single-tab') {
     e.stopPropagation(); // don't trigger the parent chip's focus-tab
-    const tabUrl   = actionEl.dataset.tabUrl;
+    const tabUrl = actionEl.dataset.tabUrl;
     const tabTitle = actionEl.dataset.tabTitle || tabUrl;
     if (!tabUrl) return;
 
@@ -2045,7 +2268,7 @@ document.addEventListener('input', async (e) => {
         const data = await res.json();
         archiveList.innerHTML = (data.archived || []).map(item => renderArchiveItem(item)).join('');
       }
-    } catch {}
+    } catch { }
     return;
   }
 
@@ -2092,18 +2315,148 @@ async function checkForUpdates() {
     const { updateAvailable } = await res.json();
     if (!updateAvailable) return;
 
-    // Show a simple text notification in the footer
-    const footer = document.querySelector('footer');
-    if (!footer) return;
+    // Show a simple text notification at the bottom
+    const dashboardColumns = document.getElementById('dashboardColumns');
+    if (!dashboardColumns) return;
     const notice = document.createElement('div');
-    notice.style.cssText = 'text-align:center; padding:8px; font-size:12px; color:var(--muted);';
+    notice.style.cssText = 'text-align:center; padding:8px; font-size:12px; color:var(--muted); margin-top:24px;';
     notice.innerHTML = 'A new version of Tab Out is available. Run <code style="background:var(--warm-gray);padding:2px 6px;border-radius:3px;font-size:11px;user-select:all;cursor:pointer;" title="Click to select">git pull https://github.com/zarazhangrui/tab-out</code> to update.';
-    footer.after(notice);
-  } catch {}
+    dashboardColumns.after(notice);
+  } catch { }
+}
+
+/* ----------------------------------------------------------------
+   SETTINGS PANEL
+   ---------------------------------------------------------------- */
+function initSettingsPanel() {
+  const toggle = document.getElementById('settingsToggle');
+  const overlay = document.getElementById('settingsOverlay');
+  const close = document.getElementById('settingsClose');
+  const save = document.getElementById('settingsSave');
+
+  if (!toggle || !overlay) return;
+
+  toggle.addEventListener('click', () => {
+    populateSettingsForm();
+    overlay.style.display = 'flex';
+  });
+
+  close.addEventListener('click', () => {
+    overlay.style.display = 'none';
+  });
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.style.display = 'none';
+  });
+
+  save.addEventListener('click', async () => {
+    const updates = {
+      userName: document.getElementById('settingUserName').value.trim(),
+      pomodoroWorkMinutes: parseInt(document.getElementById('settingWorkMin').value, 10) || 25,
+      pomodoroBreakMinutes: parseInt(document.getElementById('settingBreakMin').value, 10) || 5,
+      clockShowSeconds: document.getElementById('settingShowSeconds').checked,
+      clockFormat: document.getElementById('settingClockFormat').value,
+      useDynamicQuote: document.getElementById('settingUseDynamicQuote').checked,
+      quoteText: document.getElementById('settingQuoteText').value,
+      quoteAuthor: document.getElementById('settingQuoteAuthor').value.trim(),
+      searchEngine: document.getElementById('settingSearchEngine').value,
+    };
+    await saveAppConfig(updates);
+    overlay.style.display = 'none';
+  });
+
+  const addBtn = document.getElementById('settingsAddLink');
+  if (addBtn) {
+    addBtn.addEventListener('click', async () => {
+      const title = document.getElementById('settingsNewLinkTitle').value.trim();
+      const url = document.getElementById('settingsNewLinkUrl').value.trim();
+      if (!url) return;
+      let host = '';
+      try { host = new URL(url).hostname; } catch { }
+      const icon = host ? `https://www.google.com/s2/favicons?domain=${host}&sz=32` : '';
+      const current = [...getQuickLinks()];
+      current.push({ url, title: title || host || url, icon: icon || '' });
+      await saveAppConfig({ quickLinks: current });
+      document.getElementById('settingsNewLinkTitle').value = '';
+      document.getElementById('settingsNewLinkUrl').value = '';
+      renderSettingsQuickLinks();
+    });
+  }
+
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-action="remove-quick-link"]');
+    if (!btn) return;
+    const idx = parseInt(btn.dataset.linkIndex, 10);
+    const current = [...getQuickLinks()];
+    current.splice(idx, 1);
+    await saveAppConfig({ quickLinks: current });
+    renderSettingsQuickLinks();
+  });
+}
+
+function populateSettingsForm() {
+  const f = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+  const c = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val; };
+
+  f('settingUserName', appConfig.userName || '');
+  f('settingWorkMin', appConfig.pomodoroWorkMinutes);
+  f('settingBreakMin', appConfig.pomodoroBreakMinutes);
+  f('settingClockFormat', appConfig.clockFormat);
+  f('settingSearchEngine', appConfig.searchEngine);
+  f('settingQuoteText', appConfig.quoteText || '');
+  f('settingQuoteAuthor', appConfig.quoteAuthor || '');
+  c('settingShowSeconds', appConfig.clockShowSeconds);
+  c('settingUseDynamicQuote', appConfig.useDynamicQuote);
+
+  // Dim manual quote fields when dynamic quote is enabled
+  const manualFields = document.getElementById('manualQuoteFields');
+  if (manualFields) {
+    manualFields.style.opacity = appConfig.useDynamicQuote ? '0.4' : '1';
+    manualFields.style.pointerEvents = appConfig.useDynamicQuote ? 'none' : 'auto';
+  }
+  const dynamicToggle = document.getElementById('settingUseDynamicQuote');
+  if (dynamicToggle) {
+    dynamicToggle.addEventListener('change', () => {
+      if (manualFields) {
+        manualFields.style.opacity = dynamicToggle.checked ? '0.4' : '1';
+        manualFields.style.pointerEvents = dynamicToggle.checked ? 'none' : 'auto';
+      }
+    });
+  }
+
+  renderSettingsQuickLinks();
+}
+
+function renderSettingsQuickLinks() {
+  const container = document.getElementById('settingsQuickLinksList');
+  if (!container) return;
+  const links = getQuickLinks();
+  if (links.length === 0) {
+    container.innerHTML = '<div class="settings-hint" style="text-align:center;padding:8px 0">No quick links yet. Add one below.</div>';
+    return;
+  }
+  container.innerHTML = links.map((link, i) =>
+    `<div class="settings-quick-link-item" data-link-index="${i}">
+      <img src="${link.icon || ''}" alt="" class="settings-quick-link-icon" onerror="this.style.display='none'">
+      <span class="settings-quick-link-title">${link.title}</span>
+      <span class="settings-quick-link-url">${link.url}</span>
+      <button class="settings-quick-link-remove" data-action="remove-quick-link" data-link-index="${i}" title="Remove">&times;</button>
+    </div>`
+  ).join('');
 }
 
 /* ----------------------------------------------------------------
    INITIALIZE
    ---------------------------------------------------------------- */
 renderDashboard();
-checkForUpdates();
+// checkForUpdates();
+
+/* ----------------------------------------------------------------
+   AUTO-REFRESH — refresh dynamic content every 30 seconds
+
+   Re-fetches open tabs from the extension and re-renders tab cards,
+   stats, quote, and the saved-for-later list. Does NOT re-initialize
+   static UI (clock, dark mode, settings panel, pomodoro) so no
+   event listeners are duplicated and timer state is preserved.
+   ---------------------------------------------------------------- */
+setInterval(() => refreshDynamicContent(), 30_000);

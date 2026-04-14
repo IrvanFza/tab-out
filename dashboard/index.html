@@ -1,177 +1,294 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tab Out</title>
+  <title>My Dashboard</title>
 
   <!-- Google Fonts: Newsreader (for headings/numbers) + DM Sans (for body text) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=DM+Sans:wght@300;400;500;600&display=swap"
+    rel="stylesheet">
 
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-<div class="container">
+  <div class="container">
 
-
-
-  <!-- ================================================================
+    <!-- ================================================================
        HEADER — greeting on the left
        ================================================================ -->
-  <header>
-    <div class="header-left">
-      <!-- "Good afternoon" — written by getGreeting() in app.js -->
-      <h1 id="greeting"></h1>
-      <!-- "Friday, April 4, 2026" — written by getDateDisplay() in app.js -->
-      <div class="date" id="dateDisplay"></div>
-    </div>
-    <div class="header-right">
-      <div class="weather-widget" id="weatherWidget" style="display:none"></div>
-      <div class="pomodoro" id="pomodoro">
-        <span class="pomodoro-time" id="pomodoroTime">25:00</span>
-        <button class="pomodoro-btn" data-action="pomodoro-toggle" title="Start timer">&#9654;</button>
-        <button class="pomodoro-btn" data-action="pomodoro-reset" title="Reset timer">&#8634;</button>
+    <header>
+      <div class="header-left">
+        <!-- "Good afternoon" — written by getGreeting() in app.js -->
+        <h1 id="greeting"></h1>
+        <div class="weather-widget" id="weatherWidget" style="display:none"></div>
       </div>
-      <button class="dark-mode-toggle" id="darkModeToggle" title="Toggle dark mode">
-        <svg id="darkModeIcon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
-        </svg>
-      </button>
-      <div class="header-clock" id="headerClock"></div>
-    </div>
-  </header>
+      <div class="header-right">
+        <div class="pomodoro" id="pomodoro">
+          <span class="pomodoro-time" id="pomodoroTime">25:00</span>
+          <button class="pomodoro-btn" data-action="pomodoro-toggle" title="Start timer">&#9654;</button>
+          <button class="pomodoro-btn" data-action="pomodoro-reset" title="Reset timer">&#8634;</button>
+        </div>
+        <!-- <button class="dark-mode-toggle" id="darkModeToggle" title="Toggle dark mode">
+          <svg id="darkModeIcon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+            stroke="currentColor" width="18" height="18">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z" />
+          </svg>
+        </button> -->
+        <button class="settings-toggle" id="settingsToggle" title="Settings">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+            stroke="currentColor" width="18" height="18">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c-.007-.38.138-.751.43-.992l1.004-.827c.424-.349.534-.955.26-1.43L8.19 5.855a1.125 1.125 0 0 1 1.37-.49l1.217.456c.355.133.75.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+          </svg>
+        </button>
+        <div class="header-clock-group">
+          <div class="header-clock" id="headerClock"></div>
+          <!-- "Friday, April 4, 2026" — written by getDateDisplay() in app.js -->
+          <div class="date" id="dateDisplay"></div>
+        </div>
+      </div>
+    </header>
 
-  <!-- ================================================================
+    <!-- ================================================================
        QUICK LINKS — most-used sites
        ================================================================ -->
-  <nav class="quick-links" id="quickLinksNav"></nav>
+    <nav class="quick-links" id="quickLinksNav"></nav>
 
-  <!-- ================================================================
-       SEARCH BAR — Google search
+    <!-- ================================================================
+       SEARCH BAR — configurable search engine
        ================================================================ -->
-  <form class="search-bar" action="https://www.google.com/search" method="get" target="_top">
-    <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="16" height="16">
-      <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
-    </svg>
-    <input type="text" name="q" class="search-input" placeholder="Search Google..." autocomplete="off">
-  </form>
+    <form class="search-bar" id="searchForm" action="https://www.google.com/search" method="get" target="_top">
+      <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+        stroke="currentColor" width="16" height="16">
+        <path stroke-linecap="round" stroke-linejoin="round"
+          d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+      </svg>
+      <input type="text" id="searchInput" name="q" class="search-input" placeholder="Search Google..."
+        autocomplete="off">
+    </form>
 
-  <!-- ================================================================
+    <!-- ================================================================
        DAILY QUOTE
        ================================================================ -->
-  <div class="daily-quote" id="dailyQuote"></div>
+    <div class="daily-quote" id="dailyQuote"></div>
 
-  <!-- ================================================================
+    <!-- ================================================================
        TAB OUT DUPES BANNER — appears when you have extra Tab Out tabs open
        Hidden by default; app.js shows it when dupeTabOutCount > 1
        ================================================================ -->
-  <div class="tab-cleanup-banner" id="tabOutDupeBanner" style="display:none">
-    <div class="tab-cleanup-left">
-      <div class="tab-cleanup-icon">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
-        </svg>
+    <div class="tab-cleanup-banner" id="tabOutDupeBanner" style="display:none">
+      <div class="tab-cleanup-left">
+        <div class="tab-cleanup-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+            stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round"
+              d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+          </svg>
+        </div>
+        <div class="tab-cleanup-text">
+          You have <strong id="tabOutDupeCount"></strong> Tab Out tabs open. Keep just this one?
+        </div>
       </div>
-      <div class="tab-cleanup-text">
-        You have <strong id="tabOutDupeCount"></strong> Tab Out tabs open. Keep just this one?
-      </div>
+      <button class="tab-cleanup-btn" data-action="close-tabout-dupes">Close extras</button>
     </div>
-    <button class="tab-cleanup-btn" data-action="close-tabout-dupes">Close extras</button>
-  </div>
 
-  <!-- ================================================================
+    <!-- ================================================================
        MAIN CONTENT AREA — two-column layout
        Left: open tabs (domain/mission cards)
        Right: saved for later checklist
        The right column only renders when it has items (JS controls this)
        ================================================================ -->
-  <div class="dashboard-columns" id="dashboardColumns">
+    <div class="dashboard-columns" id="dashboardColumns">
 
-    <!-- LEFT COLUMN: Open tabs -->
-    <div class="active-section" id="openTabsSection" style="display:none">
-      <div class="section-header">
-        <h2 id="openTabsSectionTitle">Right now</h2>
-        <div class="section-line"></div>
-        <div class="section-count" id="openTabsSectionCount"></div>
-      </div>
-      <div class="missions" id="openTabsMissions"></div>
-    </div>
-
-    <!-- RIGHT COLUMN: Saved for Later checklist -->
-    <div class="deferred-column" id="deferredColumn" style="display:none">
-      <div class="section-header">
-        <h2>Saved for later</h2>
-        <div class="section-line"></div>
-        <div class="section-count" id="deferredCount"></div>
+      <!-- LEFT COLUMN: Open tabs -->
+      <div class="active-section" id="openTabsSection" style="display:none">
+        <div class="section-header">
+          <h2 id="openTabsSectionTitle"><span id="statTabs">—</span> open tabs</h2>
+          <div class="section-line"></div>
+          <div class="section-count" id="openTabsSectionCount"></div>
+        </div>
+        <div class="missions" id="openTabsMissions"></div>
       </div>
 
-      <!-- Active checklist items — injected by renderDeferredList() in app.js -->
-      <div class="deferred-list" id="deferredList"></div>
+      <!-- RIGHT COLUMN: Saved for Later checklist -->
+      <div class="deferred-column" id="deferredColumn" style="display:none">
+        <div class="section-header">
+          <h2>Saved for later</h2>
+          <div class="section-line"></div>
+          <div class="section-count" id="deferredCount"></div>
+        </div>
 
-      <!-- Empty state — shown when no active deferred tabs -->
-      <div class="deferred-empty" id="deferredEmpty" style="display:none">
-        Nothing saved. Living in the moment.
+        <!-- Active checklist items — injected by renderDeferredList() in app.js -->
+        <div class="deferred-list" id="deferredList"></div>
+
+        <!-- Empty state — shown when no active deferred tabs -->
+        <div class="deferred-empty" id="deferredEmpty" style="display:none">
+          Nothing saved. Living in the moment.
+        </div>
+
+        <!-- Archive section — collapsed by default -->
+        <div class="deferred-archive" id="deferredArchive" style="display:none">
+          <button class="archive-toggle" id="archiveToggle">
+            <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+              stroke-width="2" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+            </svg>
+            Archive
+            <span class="archive-count" id="archiveCount"></span>
+          </button>
+          <div class="archive-body" id="archiveBody" style="display:none">
+            <input type="text" class="archive-search" id="archiveSearch" placeholder="Search archived tabs...">
+            <div class="archive-list" id="archiveList"></div>
+          </div>
+        </div>
       </div>
 
-      <!-- Archive section — collapsed by default -->
-      <div class="deferred-archive" id="deferredArchive" style="display:none">
-        <button class="archive-toggle" id="archiveToggle">
-          <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
-          Archive
-          <span class="archive-count" id="archiveCount"></span>
+      <!-- Recently Closed Tabs — collapsible section -->
+      <div class="recently-closed-section" id="recentlyClosedSection" style="display:none">
+        <button class="archive-toggle" id="recentlyClosedToggle">
+          <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+            stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+          Recently closed
+          <span class="archive-count" id="recentlyClosedCount"></span>
         </button>
-        <div class="archive-body" id="archiveBody" style="display:none">
-          <input type="text" class="archive-search" id="archiveSearch" placeholder="Search archived tabs...">
-          <div class="archive-list" id="archiveList"></div>
+        <div class="recently-closed-body" id="recentlyClosedBody" style="display:none">
+          <div class="recently-closed-list" id="recentlyClosedList"></div>
+          <button class="action-btn" data-action="clear-recently-closed"
+            style="margin-top:8px;width:100%;justify-content:center;">Clear all</button>
+        </div>
+      </div>
+
+    </div><!-- end .dashboard-columns -->
+
+    <!-- ================================================================
+       FOOTER — global stats + refresh control
+       ================================================================ -->
+    <footer>
+    </footer>
+
+    <!-- ================================================================
+       SETTINGS PANEL
+       ================================================================ -->
+    <div class="settings-overlay" id="settingsOverlay" style="display:none">
+      <div class="settings-panel" id="settingsPanel">
+        <div class="settings-header">
+          <h2>Settings</h2>
+          <button class="settings-close" id="settingsClose" title="Close settings">&times;</button>
+        </div>
+        <div class="settings-body">
+
+          <div class="settings-group">
+            <label class="settings-label" for="settingUserName">Your name</label>
+            <p class="settings-hint">Shown after the greeting at the top</p>
+            <input type="text" id="settingUserName" class="settings-input" placeholder="e.g. Alex" maxlength="30">
+          </div>
+
+          <div class="settings-group">
+            <label class="settings-label">Pomodoro timer (minutes)</label>
+            <p class="settings-hint">Work/break duration for the focus timer</p>
+            <div class="settings-row">
+              <div class="settings-field">
+                <label for="settingWorkMin" class="settings-sublabel">Work</label>
+                <input type="number" id="settingWorkMin" class="settings-input settings-input-sm" min="1" max="120"
+                  value="25">
+              </div>
+              <div class="settings-field">
+                <label for="settingBreakMin" class="settings-sublabel">Break</label>
+                <input type="number" id="settingBreakMin" class="settings-input settings-input-sm" min="1" max="60"
+                  value="5">
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <label class="settings-label">Clock display</label>
+            <div class="settings-row">
+              <div class="settings-field">
+                <label for="settingClockFormat" class="settings-sublabel">Format</label>
+                <select id="settingClockFormat" class="settings-input">
+                  <option value="12">12-hour</option>
+                  <option value="24">24-hour</option>
+                </select>
+              </div>
+              <div class="settings-field settings-field-checkbox">
+                <label class="settings-sublabel">
+                  <input type="checkbox" id="settingShowSeconds"> Show seconds
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <label class="settings-label" for="settingSearchEngine">Search engine</label>
+            <select id="settingSearchEngine" class="settings-input">
+              <option value="google">Google</option>
+              <option value="bing">Bing</option>
+              <option value="duckduckgo">DuckDuckGo</option>
+              <option value="brave">Brave Search</option>
+              <option value="ecosia">Ecosia</option>
+            </select>
+          </div>
+
+          <div class="settings-group">
+            <label class="settings-label">Daily quote</label>
+            <div class="settings-field settings-field-checkbox" style="margin-bottom:8px">
+              <label class="settings-sublabel">
+                <input type="checkbox" id="settingUseDynamicQuote"> Use dynamic quote
+              </label>
+            </div>
+            <p class="settings-hint">Fetches a fresh quote daily from <a href="https://zenquotes.io/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">zenquotes.io</a>. When enabled, the manual quote below is ignored.</p>
+            <div id="manualQuoteFields">
+              <input type="text" id="settingQuoteText" class="settings-input" placeholder="Enter your quote..."
+                maxlength="300">
+              <input type="text" id="settingQuoteAuthor" class="settings-input" placeholder="Author (optional)"
+                maxlength="80">
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <label class="settings-label">Quick links</label>
+            <p class="settings-hint">Add, remove, or reorder your shortcuts</p>
+            <div class="settings-quick-links-list" id="settingsQuickLinksList"></div>
+            <div class="settings-quick-link-add">
+              <input type="text" id="settingsNewLinkTitle" class="settings-input settings-input-inline"
+                placeholder="Title">
+              <input type="url" id="settingsNewLinkUrl" class="settings-input settings-input-inline"
+                placeholder="https://example.com">
+              <button class="settings-add-btn" id="settingsAddLink" title="Add link">+</button>
+            </div>
+          </div>
+
+          <button class="settings-save" id="settingsSave">Save settings</button>
         </div>
       </div>
     </div>
 
-    <!-- Recently Closed Tabs — collapsible section -->
-    <div class="recently-closed-section" id="recentlyClosedSection" style="display:none">
-      <button class="archive-toggle" id="recentlyClosedToggle">
-        <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>
-        Recently closed
-        <span class="archive-count" id="recentlyClosedCount"></span>
-      </button>
-      <div class="recently-closed-body" id="recentlyClosedBody" style="display:none">
-        <div class="recently-closed-list" id="recentlyClosedList"></div>
-        <button class="action-btn" data-action="clear-recently-closed" style="margin-top:8px;width:100%;justify-content:center;">Clear all</button>
-      </div>
-    </div>
-
-  </div><!-- end .dashboard-columns -->
+  </div><!-- end .container -->
 
   <!-- ================================================================
-       FOOTER — global stats + refresh control
-       ================================================================ -->
-  <footer>
-    <div class="footer-stats">
-      <div class="stat">
-        <div class="stat-num" id="statTabs">—</div>
-        <div class="stat-label">Open tabs</div>
-      </div>
-    </div>
-    <div class="last-refresh">
-    </div>
-  </footer>
-
-</div><!-- end .container -->
-
-<!-- ================================================================
      TOAST — floats above everything, used for action confirmations
      Hidden by default via CSS (opacity:0, translateY)
      ================================================================ -->
-<div class="toast" id="toast">
-  <!-- Checkmark circle icon (Heroicons outline) -->
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-    <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
-  </svg>
-  <span id="toastText"></span>
-</div>
+  <div class="toast" id="toast">
+    <!-- Checkmark circle icon (Heroicons outline) -->
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round"
+        d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+    </svg>
+    <span id="toastText"></span>
+  </div>
 
-<!-- Main dashboard logic — loads last so the DOM is ready -->
-<script src="app.js"></script>
+  <!-- Main dashboard logic — loads last so the DOM is ready -->
+  <script src="app.js"></script>
 </body>
+
 </html>

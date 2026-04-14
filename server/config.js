@@ -11,19 +11,26 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-// The folder where all Tab Out data lives (in your home directory).
 const CONFIG_DIR = path.join(os.homedir(), ".mission-control");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
-// Default values — used whenever a key is absent from the config file.
 const DEFAULTS = {
-  // Which local port the web server listens on.
   port: 3456,
+  userName: "",
+  pomodoroWorkMinutes: 25,
+  pomodoroBreakMinutes: 5,
+  clockShowSeconds: false,
+  clockFormat: "12",
+  quoteText: "The impediment to action advances action. What stands in the way becomes the way.",
+  quoteAuthor: "Marcus Aurelius",
+  useDynamicQuote: false,
+  searchEngine: "google",
+  quickLinks: [],
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Load config from disk and merge with defaults.
-// ─────────────────────────────────────────────────────────────────────────────
+const VALID_SEARCH_ENGINES = ["google", "bing", "duckduckgo", "brave", "ecosia"];
+const VALID_CLOCK_FORMATS = ["12", "24"];
+
 function loadConfig() {
   let fileConfig = {};
 
@@ -51,5 +58,33 @@ const config = loadConfig();
 config.CONFIG_DIR = CONFIG_DIR;
 config.CONFIG_FILE = CONFIG_FILE;
 config.DEFAULTS = DEFAULTS;
+
+config.save = function saveConfig(updates) {
+  const merged = Object.assign({}, loadConfig(), updates);
+  if (merged.searchEngine && !VALID_SEARCH_ENGINES.includes(merged.searchEngine)) {
+    throw new Error(`Invalid searchEngine: ${merged.searchEngine}`);
+  }
+  if (merged.clockFormat && !VALID_CLOCK_FORMATS.includes(merged.clockFormat)) {
+    throw new Error(`Invalid clockFormat: ${merged.clockFormat}`);
+  }
+  if (merged.pomodoroWorkMinutes !== undefined && (merged.pomodoroWorkMinutes < 1 || merged.pomodoroWorkMinutes > 120)) {
+    throw new Error("pomodoroWorkMinutes must be between 1 and 120");
+  }
+  if (merged.pomodoroBreakMinutes !== undefined && (merged.pomodoroBreakMinutes < 1 || merged.pomodoroBreakMinutes > 60)) {
+    throw new Error("pomodoroBreakMinutes must be between 1 and 60");
+  }
+  delete merged.CONFIG_DIR;
+  delete merged.CONFIG_FILE;
+  delete merged.DEFAULTS;
+  delete merged.save;
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2) + "\n");
+  Object.assign(config, merged);
+  config.CONFIG_DIR = CONFIG_DIR;
+  config.CONFIG_FILE = CONFIG_FILE;
+  config.DEFAULTS = DEFAULTS;
+  config.save = saveConfig;
+};
+
+const saveConfig = config.save;
 
 module.exports = config;

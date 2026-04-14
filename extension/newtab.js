@@ -13,7 +13,7 @@
  */
 
 // ─── Element references ───────────────────────────────────────────────────────
-const frame    = document.getElementById('dashboard-frame');
+const frame = document.getElementById('dashboard-frame');
 const fallback = document.getElementById('fallback');
 
 // ─── 1. Check whether the server is reachable ────────────────────────────────
@@ -112,14 +112,12 @@ async function handleGetTabs() {
   const newtabUrl = `chrome-extension://${extensionId}/newtab.html`;
 
   const simpleTabs = tabs.map(tab => ({
-    id:       tab.id,
-    url:      tab.url,
-    title:    tab.title,
+    id: tab.id,
+    url: tab.url,
+    title: tab.title,
+    favIconUrl: tab.favIconUrl || null,
     windowId: tab.windowId,
-    active:   tab.active,
-    // Flag Tab Out's own new-tab pages so the dashboard can detect them.
-    // Chrome may report the URL as chrome://newtab/ or the extension URL —
-    // checking both ensures we catch them regardless.
+    active: tab.active,
     isTabOut: tab.url === newtabUrl || tab.url === 'chrome://newtab/',
   }));
   return { tabs: simpleTabs };
@@ -236,7 +234,7 @@ async function handleFocusSingleTab(url) {
         try { return new URL(t.url).hostname === targetHost; }
         catch { return false; }
       });
-    } catch {}
+    } catch { }
   }
 
   if (matches.length === 0) return { error: 'Tab not found' };

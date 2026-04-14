@@ -17,8 +17,9 @@
 //   - .get()    → returns a single row or undefined
 // ─────────────────────────────────────────────────────────────────────────────
 
-const express  = require('express');
-const path      = require('path');
+const express = require('express');
+const path = require('path');
+const config = require('./config');
 const { getUpdateStatus } = require('./updater');
 
 // Pull in the database prepared statements we need
@@ -148,10 +149,10 @@ router.post('/missions/:id/archive', (req, res) => {
     // only needs to display them as a list — we don't need to query individual
     // archived URLs. Storing as JSON keeps the archives table simple.
     archiveMission.run({
-      mission_id:   mission.id,
+      mission_id: mission.id,
       mission_name: mission.name,
-      urls_json:    JSON.stringify(urls),      // array of URL objects → JSON string
-      archived_at:  new Date().toISOString(),  // ISO timestamp of when archived
+      urls_json: JSON.stringify(urls),      // array of URL objects → JSON string
+      archived_at: new Date().toISOString(),  // ISO timestamp of when archived
     });
 
     // ── Step 4: Dismiss the mission ────────────────────────────────────────────
@@ -349,6 +350,73 @@ router.patch('/deferred/:id', (req, res) => {
   } catch (err) {
     console.error('[tab-out] Error updating deferred tab:', err);
     res.status(500).json({ error: 'Failed to update deferred tab' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/quote
+//
+// Proxies the daily quote from ZenQuotes. The browser can't fetch
+// zenquotes.io directly due to CORS restrictions, so we route it
+// through the server.
+//
+// Response: { text, author } or { error } on failure.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/quote', async (req, res) => {
+  try {
+    const resp = await fetch('https://zenquotes.io/api/random');
+    const json = await resp.json();
+    if (Array.isArray(json) && json.length > 0) {
+      res.json({ text: json[0].q, author: json[0].a });
+    } else {
+      res.status(502).json({ error: 'Unexpected ZenQuotes response' });
+    }
+  } catch (err) {
+    console.error('[routes] GET /quote proxy failed:', err.message);
+    res.status(502).json({ error: 'Failed to fetch quote' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/config
+//
+// Returns the current dashboard configuration (port, userName, pomodoro, clock,
+// search engine, quote visibility, quick links).
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/config', (req, res) => {
+  try {
+    const { port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks } = config;
+    res.json({ port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks: quickLinks || [] });
+  } catch (err) {
+    console.error('[routes] GET /config failed:', err.message);
+    res.status(500).json({ error: 'Failed to fetch config' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/config
+//
+// Updates configuration values. Only known keys are accepted; unknown keys
+// are silently ignored. Validates ranges and enums before saving.
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/config', (req, res) => {
+  try {
+    const allowed = ['userName', 'pomodoroWorkMinutes', 'pomodoroBreakMinutes', 'clockShowSeconds', 'clockFormat', 'quoteText', 'quoteAuthor', 'useDynamicQuote', 'searchEngine', 'quickLinks'];
+    const updates = {};
+    for (const key of allowed) {
+      if (req.body[key] !== undefined) {
+        updates[key] = req.body[key];
+      }
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid config keys provided' });
+    }
+    config.save(updates);
+    const { port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks } = config;
+    res.json({ port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks: quickLinks || [] });
+  } catch (err) {
+    console.error('[routes] PATCH /config failed:', err.message);
+    res.status(400).json({ error: err.message });
   }
 });
 

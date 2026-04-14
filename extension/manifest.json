@@ -3,10 +3,19 @@
   "name": "Tab Out",
   "version": "1.0.0",
   "description": "Keep tabs on your tabs. New tab page that groups your open tabs by domain and lets you close them with style.",
-  "permissions": ["tabs", "activeTab"],
-  "host_permissions": ["http://localhost:3456/*"],
-  "chrome_url_overrides": { "newtab": "newtab.html" },
-  "background": { "service_worker": "background.js" },
+  "permissions": [
+    "tabs",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://localhost:3456/*"
+  ],
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_title": "Tab Out",
     "default_icon": {
