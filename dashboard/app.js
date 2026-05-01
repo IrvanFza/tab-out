@@ -405,20 +405,23 @@ function initQuickLinkDrag() {
    ---------------------------------------------------------------- */
 async function fetchWeather() {
   const cacheKey = 'tabout-weather-cache';
+  const tempPattern = /^[+\-]?\d+°[CF]$/;
   const cached = localStorage.getItem(cacheKey);
   if (cached) {
     try {
       const data = JSON.parse(cached);
-      if (Date.now() - data.timestamp < 30 * 60 * 1000) return data;
+      const fresh = Date.now() - data.timestamp < 30 * 60 * 1000;
+      if (fresh && tempPattern.test(data.temp)) return data;
     } catch { /* refetch */ }
   }
   const resp = await fetch('https://wttr.in/?format=%t+%C');
   const text = (await resp.text()).trim();
-  // Parse "72°F Partly cloudy" or "+72°F Partly cloudy"
+  // wttr.in occasionally returns an HTML error page instead of the requested
+  // plain-text format. Reject anything that isn't "+72°F Sunny" shaped so we
+  // don't dump raw markup into the widget or poison the cache.
   const match = text.match(/^([+\-]?\d+°[CF])\s+(.+)$/);
-  const result = match
-    ? { temp: match[1], condition: match[2], timestamp: Date.now() }
-    : { temp: text, condition: '', timestamp: Date.now() };
+  if (!match) throw new Error('wttr.in returned unexpected response');
+  const result = { temp: match[1], condition: match[2], timestamp: Date.now() };
   localStorage.setItem(cacheKey, JSON.stringify(result));
   return result;
 }
