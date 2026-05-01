@@ -11,10 +11,46 @@
 'use strict';
 
 /* ----------------------------------------------------------------
-   DARK MODE — apply immediately to prevent flash
+   THEME — applied immediately to prevent a flash of the wrong palette.
+   localStorage key `tabout-theme` is one of: 'system' | 'light' | 'dark'.
+   We migrate the legacy boolean `tabout-dark-mode` once, then forget it.
    ---------------------------------------------------------------- */
-if (localStorage.getItem('tabout-dark-mode') === 'true') {
-  document.body.classList.add('dark-mode');
+(function migrateLegacyDarkMode() {
+  if (localStorage.getItem('tabout-theme')) return;
+  const legacy = localStorage.getItem('tabout-dark-mode');
+  if (legacy === 'true') {
+    localStorage.setItem('tabout-theme', 'dark');
+  } else if (legacy === 'false') {
+    localStorage.setItem('tabout-theme', 'light');
+  }
+  localStorage.removeItem('tabout-dark-mode');
+})();
+
+function getStoredTheme() {
+  const t = localStorage.getItem('tabout-theme');
+  return t === 'light' || t === 'dark' || t === 'system' ? t : 'system';
+}
+
+function resolveTheme(theme) {
+  if (theme === 'system') {
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+      ? 'dark' : 'light';
+  }
+  return theme;
+}
+
+function applyTheme(theme) {
+  const resolved = resolveTheme(theme);
+  document.body.classList.toggle('dark-mode', resolved === 'dark');
+}
+
+applyTheme(getStoredTheme());
+
+// Live-update when the OS theme flips (only matters in 'system' mode)
+if (window.matchMedia) {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (getStoredTheme() === 'system') applyTheme('system');
+  });
 }
 
 /* ----------------------------------------------------------------
@@ -1582,8 +1618,10 @@ async function renderDeferredColumn() {
     const active = data.active || [];
     const archived = data.archived || [];
 
-    // Show or hide the entire column based on whether there's anything to show
-    if (active.length === 0 && archived.length === 0) {
+    // Hide the whole section when there are no active items. The archive
+    // alone isn't worth keeping the section on screen — it'll come back the
+    // moment the user defers a new tab.
+    if (active.length === 0) {
       column.style.display = 'none';
       return;
     }
@@ -2533,6 +2571,16 @@ function initSettingsPanel() {
     overlay.style.display = 'flex';
   });
 
+  // Theme is per-device, not part of saved server config — apply on change
+  const themeSelect = document.getElementById('settingTheme');
+  if (themeSelect) {
+    themeSelect.addEventListener('change', () => {
+      const choice = themeSelect.value;
+      localStorage.setItem('tabout-theme', choice);
+      applyTheme(choice);
+    });
+  }
+
   close.addEventListener('click', () => {
     overlay.style.display = 'none';
   });
@@ -2590,6 +2638,7 @@ function populateSettingsForm() {
   const f = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
   const c = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val; };
 
+  f('settingTheme', getStoredTheme());
   f('settingUserName', appConfig.userName || '');
   f('settingWorkMin', appConfig.pomodoroWorkMinutes);
   f('settingBreakMin', appConfig.pomodoroBreakMinutes);

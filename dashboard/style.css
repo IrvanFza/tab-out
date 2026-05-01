@@ -1108,35 +1108,18 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 /* ---- Two-column layout ---- */
 .dashboard-columns {
   display: flex;
-  gap: 32px;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 24px;
 }
 
-/* Open tabs column takes most of the space */
+/* Open tabs section takes the full width */
 .dashboard-columns .active-section {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
 }
 
-/* Saved for later column — fixed width on the right, scrolls independently */
+/* Saved for later — full width row below open tabs */
 .deferred-column {
-  width: 300px;
-  flex-shrink: 0;
-  position: sticky;
-  top: 32px;
-  max-height: calc(100vh - 64px);
-  overflow-y: auto;
-}
-
-/* On narrow screens, stack vertically */
-@media (max-width: 800px) {
-  .dashboard-columns {
-    flex-direction: column;
-  }
-  .deferred-column {
-    width: 100%;
-    position: static;
-  }
+  width: 100%;
 }
 
 /* ---- Checklist items ---- */
