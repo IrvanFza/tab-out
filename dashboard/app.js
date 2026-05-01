@@ -1248,6 +1248,52 @@ function isStaleTab(tab) {
   return Date.now() - tab.lastAccessed > STALE_THRESHOLD_MS;
 }
 
+function getStaleTabs() {
+  return getRealTabs().filter(isStaleTab);
+}
+
+async function sweepStaleTabs() {
+  const stale = getStaleTabs();
+  if (stale.length === 0) return;
+  if (!confirm(`Save ${stale.length} stale tab${stale.length !== 1 ? 's' : ''} to Saved for Later, then close them?`)) {
+    return;
+  }
+  // Step 1: defer them so they're recoverable from the right column
+  try {
+    await fetch('/api/defer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tabs: stale.map(t => ({
+          url: t.url,
+          title: t.title || t.url,
+          favicon_url: t.favIconUrl || null,
+        })),
+      }),
+    });
+  } catch { /* if defer fails, still close — safer than a half-state */ }
+
+  // Step 2: close the tabs by exact URL (avoid wiping fresh tabs on the same domain)
+  const urls = stale.map(t => t.url).filter(Boolean);
+  await sendToExtension('closeTabs', { urls, exact: true });
+  playCloseSound();
+  showToast(`Swept ${stale.length} stale tab${stale.length !== 1 ? 's' : ''}`);
+  setTimeout(() => refreshDynamicContent(), 300);
+}
+
+function updateSweepStaleButton() {
+  const btn = document.getElementById('sweepStaleBtn');
+  const label = document.getElementById('sweepStaleLabel');
+  if (!btn) return;
+  const count = getStaleTabs().length;
+  if (count === 0) {
+    btn.style.display = 'none';
+    return;
+  }
+  btn.style.display = 'inline-flex';
+  if (label) label.textContent = `Sweep ${count} stale tab${count !== 1 ? 's' : ''}`;
+}
+
 /**
  * buildOverflowChips(hiddenTabs, urlCounts)
  *
@@ -1823,6 +1869,9 @@ async function refreshDynamicContent() {
   // ── Load + render saved sessions ─────────────────────────────────────────
   await fetchSessions();
   renderSessions();
+
+  // ── Update Sweep Stale button visibility + count ─────────────────────────
+  updateSweepStaleButton();
 }
 
 
@@ -1883,8 +1932,16 @@ document.addEventListener('click', async (e) => {
     await saveCurrentSession();
     return;
   }
+  if (action === 'sweep-stale') {
+    await sweepStaleTabs();
+    return;
+  }
   if (action === 'restore-session') {
     await restoreSession(actionEl.dataset.sessionId);
+    return;
+  }
+  if (action === 'switch-session') {
+    await switchToSession(actionEl.dataset.sessionId);
     return;
   }
   if (action === 'delete-session') {
@@ -2526,7 +2583,8 @@ function renderSessions() {
         <div class="session-meta">${tabCount} tab${tabCount !== 1 ? 's' : ''} · ${formatSessionDate(s.created_at)}</div>
       </div>
       <div class="session-actions">
-        <button class="session-btn session-btn-restore" data-action="restore-session" data-session-id="${s.id}">Restore</button>
+        <button class="session-btn session-btn-switch" data-action="switch-session" data-session-id="${s.id}" title="Close current tabs (auto-saved) and open this session">Switch</button>
+        <button class="session-btn session-btn-restore" data-action="restore-session" data-session-id="${s.id}" title="Open this session's tabs alongside current ones">Restore</button>
         <button class="session-btn session-btn-delete" data-action="delete-session" data-session-id="${s.id}">Delete</button>
       </div>
     </div>`;
@@ -2583,6 +2641,50 @@ async function restoreSession(id) {
   } else {
     showToast('Could not restore — extension not available');
   }
+}
+
+async function switchToSession(id) {
+  const target = savedSessions.find(s => s.id === Number(id));
+  if (!target) return;
+  const targetUrls = (target.tabs || []).map(t => t.url).filter(Boolean);
+  if (targetUrls.length === 0) {
+    showToast('Session has no URLs to switch to');
+    return;
+  }
+  const currentTabs = getRealTabs();
+  const currentUrls = currentTabs.map(t => t.url).filter(Boolean);
+
+  // Step 1: auto-save current tabs (skip if there are none open)
+  if (currentTabs.length > 0) {
+    const stamp = new Date().toLocaleString('en-US', {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+    try {
+      await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `Auto-saved · ${stamp}`,
+          tabs: currentTabs.map(t => ({ url: t.url, title: t.title, favIconUrl: t.favIconUrl })),
+        }),
+      });
+    } catch { /* if save fails, still proceed — better to switch than block */ }
+  }
+
+  // Step 2: open the target session's tabs first (so we never end up with zero)
+  const opened = await sendToExtension('openTabs', { urls: targetUrls });
+  if (!opened || !opened.success) {
+    showToast('Could not switch — extension not available');
+    return;
+  }
+
+  // Step 3: close the previously-open tabs by exact URL match
+  if (currentUrls.length > 0) {
+    await sendToExtension('closeTabs', { urls: currentUrls, exact: true });
+  }
+
+  showToast(`Switched to "${target.name}"`);
+  setTimeout(() => refreshDynamicContent(), 400);
 }
 
 async function deleteSession(id) {

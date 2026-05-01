@@ -1675,6 +1675,17 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   background: var(--card-bg);
 }
 
+.section-action-sweep {
+  color: var(--accent-amber);
+  border-color: rgba(200, 113, 58, 0.4);
+}
+
+.section-action-sweep:hover {
+  color: var(--paper);
+  background: var(--accent-amber);
+  border-color: var(--accent-amber);
+}
+
 /* ---- Sessions section ---- */
 .sessions-section {
   margin-top: 16px;
@@ -1744,6 +1755,18 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 .session-btn-restore:hover {
   color: var(--accent-sage);
   border-color: var(--accent-sage);
+}
+
+.session-btn-switch {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+.session-btn-switch:hover {
+  background: var(--accent-amber);
+  border-color: var(--accent-amber);
+  color: var(--paper);
 }
 
 .session-btn-delete:hover {
