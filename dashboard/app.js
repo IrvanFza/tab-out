@@ -403,38 +403,6 @@ function initQuickLinkDrag() {
 /* ----------------------------------------------------------------
    WEATHER
    ---------------------------------------------------------------- */
-async function fetchWeather() {
-  const cacheKey = 'tabout-weather-cache';
-  const cached = localStorage.getItem(cacheKey);
-  if (cached) {
-    try {
-      const data = JSON.parse(cached);
-      if (Date.now() - data.timestamp < 30 * 60 * 1000) return data;
-    } catch { /* refetch */ }
-  }
-  const resp = await fetch('https://wttr.in/?format=%t+%C');
-  const text = (await resp.text()).trim();
-  // Parse "72°F Partly cloudy" or "+72°F Partly cloudy"
-  const match = text.match(/^([+\-]?\d+°[CF])\s+(.+)$/);
-  const result = match
-    ? { temp: match[1], condition: match[2], timestamp: Date.now() }
-    : { temp: text, condition: '', timestamp: Date.now() };
-  localStorage.setItem(cacheKey, JSON.stringify(result));
-  return result;
-}
-
-async function renderWeather() {
-  const el = document.getElementById('weatherWidget');
-  if (!el) return;
-  try {
-    const w = await fetchWeather();
-    el.textContent = w.condition ? `${w.temp} · ${w.condition}` : w.temp;
-    el.style.display = 'block';
-  } catch {
-    el.style.display = 'none';
-  }
-}
-
 
 /* ----------------------------------------------------------------
    EXTENSION BRIDGE
@@ -1606,9 +1574,6 @@ async function renderStaticDashboard() {
 
   // --- Quick links ---
   renderQuickLinks();
-
-  // --- Weather ---
-  renderWeather();
 
   // --- Pomodoro ---
   loadPomodoroState();

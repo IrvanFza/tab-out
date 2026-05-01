@@ -87,7 +87,6 @@ header {
   font-weight: 400;
   letter-spacing: 0.5px;
   text-transform: uppercase;
-  text-align: right;
 }
 
 .header-right {
@@ -131,13 +130,6 @@ header {
 }
 
 /* ---- Weather Widget ---- */
-.weather-widget {
-  font-size: 12px;
-  color: var(--muted);
-  font-weight: 400;
-  letter-spacing: 0.3px;
-  white-space: nowrap;
-}
 
 /* ---- Pomodoro Timer ---- */
 .pomodoro {
