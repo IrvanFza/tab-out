@@ -310,6 +310,25 @@
   </div><!-- end .container -->
 
   <!-- ================================================================
+     SWEEP STALE TABS PREVIEW — modal lists the tabs about to be swept
+     so the user can uncheck any to keep before committing.
+     ================================================================ -->
+  <div class="sweep-overlay" id="sweepOverlay" style="display:none">
+    <div class="sweep-panel">
+      <div class="sweep-header">
+        <h2 id="sweepTitle">Sweep stale tabs</h2>
+        <button class="sweep-close" id="sweepClose" title="Close">&times;</button>
+      </div>
+      <p class="sweep-hint">These tabs haven't been touched in 7+ days. Sweeping saves them to <strong>Saved for Later</strong>, then closes them. Uncheck any you want to keep.</p>
+      <div class="sweep-list" id="sweepList"></div>
+      <div class="sweep-footer">
+        <button class="sweep-btn sweep-btn-cancel" id="sweepCancel">Cancel</button>
+        <button class="sweep-btn sweep-btn-confirm" id="sweepConfirm">Sweep <span id="sweepConfirmCount">0</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
      COMMAND PALETTE — Cmd/Ctrl+K opens a fuzzy-search jumper across
      every open tab. Hidden by default; toggled by app.js.
      ================================================================ -->

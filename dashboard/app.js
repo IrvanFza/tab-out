@@ -1252,19 +1252,87 @@ function getStaleTabs() {
   return getRealTabs().filter(isStaleTab);
 }
 
-async function sweepStaleTabs() {
+function formatStaleAge(ms) {
+  if (typeof ms !== 'number') return '';
+  const days = Math.floor((Date.now() - ms) / (24 * 60 * 60 * 1000));
+  if (days < 1) return 'today';
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  return `${months}mo ago`;
+}
+
+function openSweepModal() {
   const stale = getStaleTabs();
   if (stale.length === 0) return;
-  if (!confirm(`Save ${stale.length} stale tab${stale.length !== 1 ? 's' : ''} to Saved for Later, then close them?`)) {
-    return;
-  }
-  // Step 1: defer them so they're recoverable from the right column
+  const overlay = document.getElementById('sweepOverlay');
+  const list = document.getElementById('sweepList');
+  const title = document.getElementById('sweepTitle');
+  if (!overlay || !list || !title) return;
+
+  title.textContent = `Sweep stale tabs (${stale.length})`;
+  list.innerHTML = stale.map((t, i) => {
+    let host = '';
+    try { host = new URL(t.url).hostname.replace(/^www\./, ''); } catch { }
+    const age = formatStaleAge(t.lastAccessed);
+    const safeTitle = (t.title || t.url || '').replace(/</g, '&lt;');
+    const favicon = getTabFavicon(t);
+    return `<label class="sweep-row" data-sweep-index="${i}">
+      <input type="checkbox" checked data-sweep-checkbox>
+      ${favicon ? `<img class="sweep-favicon" src="${favicon}" alt="" onerror="this.style.display='none'">` : ''}
+      <span class="sweep-title">${safeTitle}</span>
+      <span class="sweep-host">${host}</span>
+      <span class="sweep-age">${age}</span>
+    </label>`;
+  }).join('');
+
+  // Stash the tabs on the overlay so the confirm handler reads the same set
+  overlay._staleTabs = stale;
+  overlay.style.display = 'flex';
+  updateSweepConfirmCount();
+}
+
+function closeSweepModal() {
+  const overlay = document.getElementById('sweepOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function getSweepSelectedTabs() {
+  const overlay = document.getElementById('sweepOverlay');
+  if (!overlay || !overlay._staleTabs) return [];
+  const list = document.getElementById('sweepList');
+  const rows = list ? list.querySelectorAll('.sweep-row') : [];
+  const selected = [];
+  rows.forEach(row => {
+    const cb = row.querySelector('input[type="checkbox"]');
+    if (cb && cb.checked) {
+      const idx = Number(row.dataset.sweepIndex);
+      const tab = overlay._staleTabs[idx];
+      if (tab) selected.push(tab);
+    }
+  });
+  return selected;
+}
+
+function updateSweepConfirmCount() {
+  const countEl = document.getElementById('sweepConfirmCount');
+  const confirmBtn = document.getElementById('sweepConfirm');
+  if (!countEl || !confirmBtn) return;
+  const n = getSweepSelectedTabs().length;
+  countEl.textContent = n;
+  confirmBtn.disabled = n === 0;
+}
+
+async function confirmSweep() {
+  const selected = getSweepSelectedTabs();
+  if (selected.length === 0) return;
+  closeSweepModal();
+  // Step 1: defer them so they're recoverable from Saved for Later
   try {
     await fetch('/api/defer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        tabs: stale.map(t => ({
+        tabs: selected.map(t => ({
           url: t.url,
           title: t.title || t.url,
           favicon_url: t.favIconUrl || null,
@@ -1274,11 +1342,40 @@ async function sweepStaleTabs() {
   } catch { /* if defer fails, still close — safer than a half-state */ }
 
   // Step 2: close the tabs by exact URL (avoid wiping fresh tabs on the same domain)
-  const urls = stale.map(t => t.url).filter(Boolean);
+  const urls = selected.map(t => t.url).filter(Boolean);
   await sendToExtension('closeTabs', { urls, exact: true });
   playCloseSound();
-  showToast(`Swept ${stale.length} stale tab${stale.length !== 1 ? 's' : ''}`);
+  showToast(`Swept ${selected.length} stale tab${selected.length !== 1 ? 's' : ''}`);
   setTimeout(() => refreshDynamicContent(), 300);
+}
+
+function initSweepModal() {
+  const overlay = document.getElementById('sweepOverlay');
+  const list = document.getElementById('sweepList');
+  const closeBtn = document.getElementById('sweepClose');
+  const cancelBtn = document.getElementById('sweepCancel');
+  const confirmBtn = document.getElementById('sweepConfirm');
+  if (!overlay) return;
+
+  if (closeBtn) closeBtn.addEventListener('click', closeSweepModal);
+  if (cancelBtn) cancelBtn.addEventListener('click', closeSweepModal);
+  if (confirmBtn) confirmBtn.addEventListener('click', confirmSweep);
+
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeSweepModal();
+  });
+
+  if (list) {
+    list.addEventListener('change', (e) => {
+      if (e.target.matches('input[type="checkbox"]')) updateSweepConfirmCount();
+    });
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlay.style.display !== 'none') {
+      closeSweepModal();
+    }
+  });
 }
 
 function updateSweepStaleButton() {
@@ -1685,6 +1782,9 @@ async function renderStaticDashboard() {
   // --- Command palette (Cmd/Ctrl+K) ---
   initCommandPalette();
 
+  // --- Sweep stale tabs preview modal ---
+  initSweepModal();
+
   // ── Fetch tabs + render dynamic content ────────────────────────────────
   await refreshDynamicContent();
 }
@@ -1933,7 +2033,7 @@ document.addEventListener('click', async (e) => {
     return;
   }
   if (action === 'sweep-stale') {
-    await sweepStaleTabs();
+    openSweepModal();
     return;
   }
   if (action === 'restore-session') {
