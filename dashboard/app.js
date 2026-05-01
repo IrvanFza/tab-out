@@ -1636,17 +1636,6 @@ async function renderStaticDashboard() {
     }
   }
 
-  // --- Sessions panel toggle (collapsible) ---
-  const sessionsToggle = document.getElementById('sessionsToggle');
-  const sessionsBody = document.getElementById('sessionsBody');
-  if (sessionsToggle && sessionsBody) {
-    sessionsToggle.addEventListener('click', () => {
-      const open = sessionsBody.style.display !== 'none';
-      sessionsBody.style.display = open ? 'none' : 'block';
-      sessionsToggle.classList.toggle('open', !open);
-    });
-  }
-
   // --- Command palette (Cmd/Ctrl+K) ---
   initCommandPalette();
 
@@ -2571,13 +2560,9 @@ async function saveCurrentSession() {
     await fetchSessions();
     renderSessions();
     showToast(`Saved "${name}"`);
-    // Open the sessions panel so the user sees their new session
-    const body = document.getElementById('sessionsBody');
-    const toggle = document.getElementById('sessionsToggle');
-    if (body && toggle) {
-      body.style.display = 'block';
-      toggle.classList.add('open');
-    }
+    // Scroll the new session into view
+    const section = document.getElementById('sessionsSection');
+    if (section) section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   } catch {
     showToast('Failed to save session');
   }

@@ -158,24 +158,6 @@
         </div>
       </div>
 
-      <!-- Sessions — saved snapshots of a set of tabs you can restore later -->
-      <div class="sessions-section" id="sessionsSection" style="display:none">
-        <button class="archive-toggle" id="sessionsToggle">
-          <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-            stroke-width="2" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-          </svg>
-          Sessions
-          <span class="archive-count" id="sessionsCount"></span>
-        </button>
-        <div class="sessions-body" id="sessionsBody" style="display:none">
-          <div class="sessions-list" id="sessionsList"></div>
-          <div class="sessions-empty" id="sessionsEmpty" style="display:none">
-            No saved sessions yet. Save a set of tabs above and they'll show up here.
-          </div>
-        </div>
-      </div>
-
       <!-- Recently Closed Tabs — collapsible section -->
       <div class="recently-closed-section" id="recentlyClosedSection" style="display:none">
         <button class="archive-toggle" id="recentlyClosedToggle">
@@ -194,6 +176,24 @@
       </div>
 
     </div><!-- end .dashboard-columns -->
+
+    <!-- ================================================================
+       SESSIONS — saved snapshots of a set of tabs you can restore later.
+       Lives below the columns as a full-width collapsible row.
+       ================================================================ -->
+    <div class="sessions-section" id="sessionsSection" style="display:none">
+      <div class="section-header">
+        <h2>Sessions</h2>
+        <div class="section-line"></div>
+        <div class="section-count" id="sessionsCount"></div>
+      </div>
+      <div class="sessions-body" id="sessionsBody">
+        <div class="sessions-list" id="sessionsList"></div>
+        <div class="sessions-empty" id="sessionsEmpty" style="display:none">
+          No saved sessions yet.
+        </div>
+      </div>
+    </div>
 
     <!-- ================================================================
        FOOTER — global stats + refresh control

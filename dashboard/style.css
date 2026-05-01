@@ -1677,18 +1677,14 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 
 /* ---- Sessions section ---- */
 .sessions-section {
-  margin-top: 24px;
-  margin-bottom: 24px;
-}
-
-.sessions-body {
-  padding-top: 12px;
+  margin-top: 16px;
+  margin-bottom: 32px;
 }
 
 .sessions-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
 }
 
 .session-row {
