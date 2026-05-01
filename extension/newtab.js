@@ -80,6 +80,10 @@ window.addEventListener('message', async (event) => {
       // Close extra Tab Out new-tab pages, keeping only the current one
       response = await handleCloseTabOutDupes();
 
+    } else if (action === 'openTabs') {
+      // Open a list of URLs as new background tabs (used by Restore Session)
+      response = await handleOpenTabs(msg.urls);
+
     } else {
       response = { error: `Unknown action: ${action}` };
     }
@@ -118,6 +122,10 @@ async function handleGetTabs() {
     favIconUrl: tab.favIconUrl || null,
     windowId: tab.windowId,
     active: tab.active,
+    // tab.lastAccessed is a unix-ms timestamp (Chrome 121+). Undefined on
+    // older Chrome — the dashboard treats missing values as "fresh" so it
+    // never falsely flags tabs as stale.
+    lastAccessed: typeof tab.lastAccessed === 'number' ? tab.lastAccessed : null,
     isTabOut: tab.url === newtabUrl || tab.url === 'chrome://newtab/',
   }));
   return { tabs: simpleTabs };
@@ -311,6 +319,26 @@ async function handleCloseTabOutDupes() {
   }
 
   return { closedCount: toClose.length };
+}
+
+/**
+ * openTabs — Opens a list of URLs as new background tabs in the current
+ * window. Used to restore saved sessions.
+ */
+async function handleOpenTabs(urls = []) {
+  if (!Array.isArray(urls) || urls.length === 0) {
+    return { error: 'No URLs provided' };
+  }
+  const win = await chrome.windows.getCurrent();
+  let opened = 0;
+  for (const url of urls) {
+    if (!url || typeof url !== 'string') continue;
+    try {
+      await chrome.tabs.create({ url, windowId: win.id, active: false });
+      opened += 1;
+    } catch { /* skip URLs Chrome refuses (chrome://, etc.) */ }
+  }
+  return { openedCount: opened };
 }
 
 /**

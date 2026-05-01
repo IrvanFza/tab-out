@@ -1239,6 +1239,15 @@ function checkTabOutDupes() {
    and renders a card per domain.
    ---------------------------------------------------------------- */
 
+// A tab is "stale" if Chrome reports it hasn't been visited in 7+ days.
+// chrome.tabs.Tab.lastAccessed is unix-ms, available in Chrome 121+. When the
+// field is null/missing we treat the tab as fresh — never falsely flag.
+const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
+function isStaleTab(tab) {
+  if (!tab || typeof tab.lastAccessed !== 'number') return false;
+  return Date.now() - tab.lastAccessed > STALE_THRESHOLD_MS;
+}
+
 /**
  * buildOverflowChips(hiddenTabs, urlCounts)
  *
@@ -1251,7 +1260,8 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}) {
     const label = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), '');
     const count = urlCounts[tab.url] || 1;
     const dupeTag = count > 1 ? ` <span class="chip-dupe-badge">(${count}x)</span>` : '';
-    const chipClass = count > 1 ? ' chip-has-dupes' : '';
+    let chipClass = count > 1 ? ' chip-has-dupes' : '';
+    if (isStaleTab(tab)) chipClass += ' chip-stale';
     const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
     const safeTitle = label.replace(/"/g, '&quot;');
     const faviconUrl = getTabFavicon(tab);
@@ -1337,7 +1347,8 @@ function renderDomainCard(group, groupIndex) {
     const dupeTag = count > 1
       ? ` <span class="chip-dupe-badge">(${count}x)</span>`
       : '';
-    const chipClass = count > 1 ? ' chip-has-dupes' : '';
+    let chipClass = count > 1 ? ' chip-has-dupes' : '';
+    if (isStaleTab(tab)) chipClass += ' chip-stale';
     const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
     const safeTitle = label.replace(/"/g, '&quot;');
     const faviconUrl = getTabFavicon(tab);
@@ -1625,6 +1636,20 @@ async function renderStaticDashboard() {
     }
   }
 
+  // --- Sessions panel toggle (collapsible) ---
+  const sessionsToggle = document.getElementById('sessionsToggle');
+  const sessionsBody = document.getElementById('sessionsBody');
+  if (sessionsToggle && sessionsBody) {
+    sessionsToggle.addEventListener('click', () => {
+      const open = sessionsBody.style.display !== 'none';
+      sessionsBody.style.display = open ? 'none' : 'block';
+      sessionsToggle.classList.toggle('open', !open);
+    });
+  }
+
+  // --- Command palette (Cmd/Ctrl+K) ---
+  initCommandPalette();
+
   // ── Fetch tabs + render dynamic content ────────────────────────────────
   await refreshDynamicContent();
 }
@@ -1805,6 +1830,10 @@ async function refreshDynamicContent() {
 
   // ── Render recently closed tabs ─────────────────────────────────────────
   renderRecentlyClosed();
+
+  // ── Load + render saved sessions ─────────────────────────────────────────
+  await fetchSessions();
+  renderSessions();
 }
 
 
@@ -1857,6 +1886,20 @@ document.addEventListener('click', async (e) => {
     localStorage.removeItem('tabout-recently-closed');
     renderRecentlyClosed();
     showToast('Cleared recently closed tabs');
+    return;
+  }
+
+  // --- Sessions ---
+  if (action === 'save-session') {
+    await saveCurrentSession();
+    return;
+  }
+  if (action === 'restore-session') {
+    await restoreSession(actionEl.dataset.sessionId);
+    return;
+  }
+  if (action === 'delete-session') {
+    await deleteSession(actionEl.dataset.sessionId);
     return;
   }
 
@@ -2447,6 +2490,275 @@ function renderSettingsQuickLinks() {
     </div>`
   ).join('');
 }
+
+/* ----------------------------------------------------------------
+   SESSIONS — save/list/restore/delete a named set of tabs
+   ---------------------------------------------------------------- */
+
+let savedSessions = [];
+
+async function fetchSessions() {
+  try {
+    const res = await fetch('/api/sessions');
+    if (!res.ok) return;
+    const data = await res.json();
+    savedSessions = Array.isArray(data.sessions) ? data.sessions : [];
+  } catch { savedSessions = []; }
+}
+
+function formatSessionDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso.replace(' ', 'T') + 'Z');
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function renderSessions() {
+  const section = document.getElementById('sessionsSection');
+  const list = document.getElementById('sessionsList');
+  const empty = document.getElementById('sessionsEmpty');
+  const countEl = document.getElementById('sessionsCount');
+  if (!section || !list) return;
+
+  if (savedSessions.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  section.style.display = 'block';
+  countEl.textContent = `(${savedSessions.length})`;
+
+  list.innerHTML = savedSessions.map(s => {
+    const tabCount = (s.tabs || []).length;
+    const safeName = (s.name || '').replace(/"/g, '&quot;');
+    return `<div class="session-row" data-session-id="${s.id}">
+      <div class="session-info">
+        <div class="session-name" title="${safeName}">${safeName}</div>
+        <div class="session-meta">${tabCount} tab${tabCount !== 1 ? 's' : ''} · ${formatSessionDate(s.created_at)}</div>
+      </div>
+      <div class="session-actions">
+        <button class="session-btn session-btn-restore" data-action="restore-session" data-session-id="${s.id}">Restore</button>
+        <button class="session-btn session-btn-delete" data-action="delete-session" data-session-id="${s.id}">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  if (empty) empty.style.display = 'none';
+}
+
+async function saveCurrentSession() {
+  const realTabs = getRealTabs();
+  if (realTabs.length === 0) {
+    showToast('No tabs to save');
+    return;
+  }
+  const name = (prompt(`Name this session (${realTabs.length} tabs):`) || '').trim();
+  if (!name) return;
+  try {
+    const res = await fetch('/api/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        tabs: realTabs.map(t => ({ url: t.url, title: t.title, favIconUrl: t.favIconUrl })),
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      showToast(err.error || 'Failed to save session');
+      return;
+    }
+    await fetchSessions();
+    renderSessions();
+    showToast(`Saved "${name}"`);
+    // Open the sessions panel so the user sees their new session
+    const body = document.getElementById('sessionsBody');
+    const toggle = document.getElementById('sessionsToggle');
+    if (body && toggle) {
+      body.style.display = 'block';
+      toggle.classList.add('open');
+    }
+  } catch {
+    showToast('Failed to save session');
+  }
+}
+
+async function restoreSession(id) {
+  const session = savedSessions.find(s => s.id === Number(id));
+  if (!session) return;
+  const urls = (session.tabs || []).map(t => t.url).filter(Boolean);
+  if (urls.length === 0) {
+    showToast('Session has no URLs to restore');
+    return;
+  }
+  const result = await sendToExtension('openTabs', { urls });
+  if (result && result.success) {
+    showToast(`Restored ${result.openedCount || urls.length} tabs`);
+    setTimeout(() => refreshDynamicContent(), 300);
+  } else {
+    showToast('Could not restore — extension not available');
+  }
+}
+
+async function deleteSession(id) {
+  if (!confirm('Delete this session?')) return;
+  try {
+    const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      showToast('Failed to delete session');
+      return;
+    }
+    await fetchSessions();
+    renderSessions();
+    showToast('Session deleted');
+  } catch {
+    showToast('Failed to delete session');
+  }
+}
+
+
+/* ----------------------------------------------------------------
+   COMMAND PALETTE — Cmd/Ctrl+K to jump to any open tab
+   ---------------------------------------------------------------- */
+
+const palette = {
+  open: false,
+  filtered: [],
+  cursor: 0,
+};
+
+function openPalette() {
+  if (palette.open) return;
+  const overlay = document.getElementById('paletteOverlay');
+  const input = document.getElementById('paletteInput');
+  if (!overlay || !input) return;
+  palette.open = true;
+  palette.cursor = 0;
+  overlay.style.display = 'flex';
+  input.value = '';
+  filterPalette('');
+  // Focus on next frame to win against the keydown that opened us
+  requestAnimationFrame(() => input.focus());
+}
+
+function closePalette() {
+  if (!palette.open) return;
+  palette.open = false;
+  const overlay = document.getElementById('paletteOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function filterPalette(query) {
+  const q = (query || '').trim().toLowerCase();
+  const tabs = getRealTabs();
+  if (!q) {
+    palette.filtered = tabs.slice(0, 50);
+  } else {
+    palette.filtered = tabs
+      .filter(t => {
+        const title = (t.title || '').toLowerCase();
+        const url = (t.url || '').toLowerCase();
+        return title.includes(q) || url.includes(q);
+      })
+      .slice(0, 50);
+  }
+  palette.cursor = 0;
+  renderPalette();
+}
+
+function renderPalette() {
+  const results = document.getElementById('paletteResults');
+  if (!results) return;
+  if (palette.filtered.length === 0) {
+    results.innerHTML = `<div class="palette-empty">No matching tabs</div>`;
+    return;
+  }
+  results.innerHTML = palette.filtered.map((t, i) => {
+    let host = '';
+    try { host = new URL(t.url).hostname.replace(/^www\./, ''); } catch { }
+    const safeUrl = (t.url || '').replace(/"/g, '&quot;');
+    const title = (t.title || t.url || '').replace(/</g, '&lt;');
+    const favicon = getTabFavicon(t);
+    const activeCls = i === palette.cursor ? ' active' : '';
+    return `<div class="palette-row${activeCls}" data-palette-index="${i}" data-palette-url="${safeUrl}">
+      ${favicon ? `<img class="palette-favicon" src="${favicon}" alt="" onerror="this.style.display='none'">` : ''}
+      <span class="palette-title">${title}</span>
+      <span class="palette-host">${host}</span>
+    </div>`;
+  }).join('');
+
+  // Make sure the active row is in view
+  const active = results.querySelector('.palette-row.active');
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+function movePaletteCursor(delta) {
+  if (palette.filtered.length === 0) return;
+  palette.cursor = (palette.cursor + delta + palette.filtered.length) % palette.filtered.length;
+  renderPalette();
+}
+
+async function activatePaletteRow(idx) {
+  const tab = palette.filtered[idx];
+  if (!tab) return;
+  closePalette();
+  await sendToExtension('focusTab', { url: tab.url });
+}
+
+function initCommandPalette() {
+  const overlay = document.getElementById('paletteOverlay');
+  const input = document.getElementById('paletteInput');
+  const results = document.getElementById('paletteResults');
+  if (!overlay || !input || !results) return;
+
+  // Cmd/Ctrl+K opens the palette from anywhere
+  document.addEventListener('keydown', (e) => {
+    const isMod = e.metaKey || e.ctrlKey;
+    if (isMod && (e.key === 'k' || e.key === 'K')) {
+      e.preventDefault();
+      if (palette.open) { closePalette(); } else { openPalette(); }
+      return;
+    }
+    if (!palette.open) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closePalette();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      movePaletteCursor(1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      movePaletteCursor(-1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      activatePaletteRow(palette.cursor);
+    }
+  });
+
+  input.addEventListener('input', () => filterPalette(input.value));
+
+  results.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-palette-index]');
+    if (!row) return;
+    activatePaletteRow(Number(row.dataset.paletteIndex));
+  });
+
+  results.addEventListener('mousemove', (e) => {
+    const row = e.target.closest('[data-palette-index]');
+    if (!row) return;
+    const idx = Number(row.dataset.paletteIndex);
+    if (idx !== palette.cursor) {
+      palette.cursor = idx;
+      renderPalette();
+    }
+  });
+
+  // Click outside the palette closes it
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closePalette();
+  });
+}
+
 
 /* ----------------------------------------------------------------
    INITIALIZE

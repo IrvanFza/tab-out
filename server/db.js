@@ -142,6 +142,20 @@ db.exec(`
     archived       INTEGER NOT NULL DEFAULT 0,
     archived_at    TEXT
   );
+
+  -- ──────────────────────────────────────────────────────────────────────────
+  -- sessions table
+  -- A named snapshot of a set of tabs ("Mr Client research", "Friday inbox
+  -- triage"). User clicks Save → the current tab list is stored as JSON.
+  -- Restore opens each URL as a new tab. Sessions are durable across restarts
+  -- and live until the user deletes them.
+  -- ──────────────────────────────────────────────────────────────────────────
+  CREATE TABLE IF NOT EXISTS sessions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL,
+    urls_json   TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -366,6 +380,30 @@ const searchDeferredArchived = db.prepare(`
   LIMIT 50
 `);
 
+// ── SESSIONS QUERIES ──────────────────────────────────────────────────────
+
+const insertSession = db.prepare(`
+  INSERT INTO sessions (name, urls_json)
+  VALUES (:name, :urls_json)
+`);
+
+const getSessions = db.prepare(`
+  SELECT id, name, urls_json, created_at
+  FROM   sessions
+  ORDER BY created_at DESC
+`);
+
+const getSession = db.prepare(`
+  SELECT id, name, urls_json, created_at
+  FROM   sessions
+  WHERE  id = :id
+`);
+
+const deleteSession = db.prepare(`
+  DELETE FROM sessions
+  WHERE id = :id
+`);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // clearAllMissions — function helper
 //
@@ -425,4 +463,8 @@ module.exports = {
   dismissDeferred,      // ({ id }) → marks as dismissed + archived
   ageOutDeferred,       // () → archives tabs older than 30 days
   searchDeferredArchived, // ({ q }) → search archived by title/url
+  insertSession,    // ({ name, urls_json }) → inserts a new session
+  getSessions,      // () → all sessions ordered newest first
+  getSession,       // ({ id }) → single session row or undefined
+  deleteSession,    // ({ id }) → deletes a session
 };

@@ -111,6 +111,15 @@
         <div class="section-header">
           <h2 id="openTabsSectionTitle"><span id="statTabs">—</span> open tabs</h2>
           <div class="section-line"></div>
+          <button class="section-action" id="saveSessionBtn" data-action="save-session" title="Save current tabs as a named session">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+              <polyline points="17 21 17 13 7 13 7 21"/>
+              <polyline points="7 3 7 8 15 8"/>
+            </svg>
+            Save session
+          </button>
           <div class="section-count" id="openTabsSectionCount"></div>
         </div>
         <div class="missions" id="openTabsMissions"></div>
@@ -145,6 +154,24 @@
           <div class="archive-body" id="archiveBody" style="display:none">
             <input type="text" class="archive-search" id="archiveSearch" placeholder="Search archived tabs...">
             <div class="archive-list" id="archiveList"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sessions — saved snapshots of a set of tabs you can restore later -->
+      <div class="sessions-section" id="sessionsSection" style="display:none">
+        <button class="archive-toggle" id="sessionsToggle">
+          <svg class="archive-chevron" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+            stroke-width="2" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+          </svg>
+          Sessions
+          <span class="archive-count" id="sessionsCount"></span>
+        </button>
+        <div class="sessions-body" id="sessionsBody" style="display:none">
+          <div class="sessions-list" id="sessionsList"></div>
+          <div class="sessions-empty" id="sessionsEmpty" style="display:none">
+            No saved sessions yet. Save a set of tabs above and they'll show up here.
           </div>
         </div>
       </div>
@@ -272,6 +299,22 @@
     </div>
 
   </div><!-- end .container -->
+
+  <!-- ================================================================
+     COMMAND PALETTE — Cmd/Ctrl+K opens a fuzzy-search jumper across
+     every open tab. Hidden by default; toggled by app.js.
+     ================================================================ -->
+  <div class="palette-overlay" id="paletteOverlay" style="display:none">
+    <div class="palette" id="palette">
+      <input type="text" id="paletteInput" class="palette-input" placeholder="Jump to tab..." autocomplete="off" spellcheck="false">
+      <div class="palette-results" id="paletteResults"></div>
+      <div class="palette-hint">
+        <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+        <span><kbd>↵</kbd> jump</span>
+        <span><kbd>esc</kbd> close</span>
+      </div>
+    </div>
+  </div>
 
   <!-- ================================================================
      TOAST — floats above everything, used for action confirmations

@@ -37,6 +37,10 @@ const {
   dismissDeferred,
   ageOutDeferred,
   searchDeferredArchived,
+  insertSession,
+  getSessions,
+  getSession,
+  deleteSession,
 } = require('./db');
 
 // An Express Router is like a mini-app: it holds a group of related routes.
@@ -352,6 +356,83 @@ router.patch('/deferred/:id', (req, res) => {
     res.status(500).json({ error: 'Failed to update deferred tab' });
   }
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSIONS — save/list/restore/delete a named set of tabs.
+//
+// A "session" is a named snapshot of tabs. The user clicks Save on the
+// dashboard → we store the current tab URLs as JSON. Later they can restore
+// the session (extension reopens each URL as a new tab) or delete it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get('/sessions', (req, res) => {
+  try {
+    const rows = getSessions.all();
+    const sessions = rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      created_at: r.created_at,
+      tabs: safeParseTabs(r.urls_json),
+    }));
+    res.json({ sessions });
+  } catch (err) {
+    console.error('[routes] GET /sessions failed:', err.message);
+    res.status(500).json({ error: 'Failed to fetch sessions' });
+  }
+});
+
+router.post('/sessions', (req, res) => {
+  try {
+    const name = (req.body && req.body.name || '').trim();
+    const tabs = req.body && req.body.tabs;
+    if (!name) return res.status(400).json({ error: 'name is required' });
+    if (!Array.isArray(tabs) || tabs.length === 0) {
+      return res.status(400).json({ error: 'tabs array is required' });
+    }
+    // Strip to just the fields we want stored — extension Tab objects can be huge
+    const slim = tabs
+      .filter(t => t && t.url)
+      .map(t => ({ url: t.url, title: t.title || '', favIconUrl: t.favIconUrl || null }));
+    if (slim.length === 0) {
+      return res.status(400).json({ error: 'no valid tabs to save' });
+    }
+    const result = insertSession.run({
+      name: name.slice(0, 100),
+      urls_json: JSON.stringify(slim),
+    });
+    const row = getSession.get({ id: result.lastInsertRowid });
+    res.json({
+      session: {
+        id: row.id,
+        name: row.name,
+        created_at: row.created_at,
+        tabs: safeParseTabs(row.urls_json),
+      },
+    });
+  } catch (err) {
+    console.error('[routes] POST /sessions failed:', err.message);
+    res.status(500).json({ error: 'Failed to save session' });
+  }
+});
+
+router.delete('/sessions/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid ID' });
+    deleteSession.run({ id });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[routes] DELETE /sessions/:id failed:', err.message);
+    res.status(500).json({ error: 'Failed to delete session' });
+  }
+});
+
+function safeParseTabs(urlsJson) {
+  try {
+    const arr = JSON.parse(urlsJson);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/quote
