@@ -1743,15 +1743,20 @@ function renderDomainCard(group, groupIndex) {
   const statusBarClass = hasDupes ? 'active' : 'neutral';
   const statusBarStyle = hasDupes ? ' style="background: var(--accent-amber);"' : '';
 
-  // Actions: always show save all + close all, add "Close duplicates" if dupes exist
-  let actionsHtml = `
-    <button class="action-btn close-tabs" data-action="close-domain-tabs" data-domain-id="${stableId}">
-      ${ICONS.close}
-      Close all ${tabCount} tab${tabCount !== 1 ? 's' : ''}
-    </button>
-    <button class="action-btn" data-action="sweep-domain" data-domain-id="${stableId}" title="Save all to Saved for Later, then close">
-      Sweep all (save first)
-    </button>`;
+  // Actions: only show bulk close/sweep when there's more than one tab —
+  // the chip's own X already handles a single tab, no need for a redundant
+  // "Close all 1 tab" button.
+  let actionsHtml = '';
+  if (tabCount > 1) {
+    actionsHtml += `
+      <button class="action-btn close-tabs" data-action="close-domain-tabs" data-domain-id="${stableId}">
+        ${ICONS.close}
+        Close all ${tabCount} tabs
+      </button>
+      <button class="action-btn" data-action="sweep-domain" data-domain-id="${stableId}" title="Save all to Saved for Later, then close">
+        Sweep all (save first)
+      </button>`;
+  }
 
   if (hasDupes) {
     const dupeUrlsEncoded = dupeUrls.map(([url]) => encodeURIComponent(url)).join(',');
