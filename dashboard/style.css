@@ -1398,12 +1398,15 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   background: var(--card-bg);
   border: 1px solid var(--warm-gray);
   border-radius: 16px;
-  width: 420px;
+  width: 800px;
   max-width: 95vw;
-  max-height: 90vh;
-  overflow-y: auto;
+  height: 80vh;
+  max-height: 700px;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 20px 60px rgba(0,0,0,0.15);
   animation: slideUp 0.2s ease;
+  overflow: hidden;
 }
 
 @keyframes slideUp {
@@ -1414,9 +1417,14 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 .settings-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px 12px;
+  gap: 16px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--warm-gray);
+  flex-shrink: 0;
+}
+
+.settings-header h2 {
+  flex-shrink: 0;
 }
 
 .settings-header h2 {
@@ -1444,11 +1452,107 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   color: var(--ink);
 }
 
+.settings-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.settings-nav {
+  width: 200px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--warm-gray);
+  padding: 12px 8px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.015);
+}
+
+body.dark-mode .settings-nav {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  margin-bottom: 2px;
+}
+
+.settings-nav-item:hover {
+  background: var(--warm-gray);
+  color: var(--ink);
+}
+
+.settings-nav-item.active {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.settings-nav-item.active:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.settings-nav-icon {
+  font-size: 14px;
+  width: 16px;
+  display: inline-flex;
+  justify-content: center;
+}
+
 .settings-body {
+  flex: 1;
   padding: 20px 24px 24px;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.settings-footer {
+  border-top: 1px solid var(--warm-gray);
+  padding: 12px 20px;
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.settings-footer .settings-save {
+  margin: 0;
+}
+
+/* Hide groups not matching the active tab. Settings-search overrides this. */
+.settings-body[data-active-tab] .settings-group {
+  display: none;
+}
+.settings-body[data-active-tab="appearance"] .settings-group[data-tab="appearance"],
+.settings-body[data-active-tab="dashboard"] .settings-group[data-tab="dashboard"],
+.settings-body[data-active-tab="tabs"] .settings-group[data-tab="tabs"],
+.settings-body[data-active-tab="heatmap"] .settings-group[data-tab="heatmap"],
+.settings-body[data-active-tab="time"] .settings-group[data-tab="time"],
+.settings-body[data-active-tab="personal"] .settings-group[data-tab="personal"] {
+  display: flex;
+}
+
+/* When searching, ignore the tab filter and show all matches */
+.settings-body.searching .settings-group {
+  display: flex;
+}
+.settings-body.searching .settings-group.search-hidden {
+  display: none;
 }
 
 .settings-group {
@@ -1524,13 +1628,12 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   color: var(--paper);
   border: none;
   border-radius: 8px;
-  padding: 12px 20px;
+  padding: 8px 18px;
   font-family: 'DM Sans', sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: opacity 0.15s;
-  margin-top: 4px;
 }
 
 .settings-save:hover {
@@ -2107,18 +2210,14 @@ body.animations-off *::after {
 }
 
 /* ---- Settings search ---- */
-.settings-search-wrap {
-  padding: 8px 20px 0;
-}
-
 .settings-search-input {
+  flex: 1;
   font-family: 'DM Sans', sans-serif;
   font-size: 13px;
-  width: 100%;
   background: transparent;
   border: 1px solid var(--warm-gray);
   border-radius: 6px;
-  padding: 8px 12px;
+  padding: 6px 12px;
   color: var(--ink);
   outline: none;
 }

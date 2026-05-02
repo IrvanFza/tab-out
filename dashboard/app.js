@@ -2128,6 +2128,7 @@ async function renderStaticDashboard() {
   initSnoozePopover();
   initNotePopover();
   initShortcutSheet();
+  initSettingsNav();
   initSettingsSearch();
   initChipContextMenu();
   initMultiSelect();
@@ -3445,24 +3446,64 @@ function initChipDragToSession() {
   });
 }
 
+function setSettingsTab(tab) {
+  const body = document.querySelector('.settings-body');
+  if (!body) return;
+  body.dataset.activeTab = tab;
+  document.querySelectorAll('.settings-nav-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  // Scroll body to top when switching tabs
+  body.scrollTop = 0;
+}
+
+function initSettingsNav() {
+  const nav = document.getElementById('settingsNav');
+  if (!nav) return;
+  // Default to Appearance
+  const body = document.querySelector('.settings-body');
+  if (body && !body.dataset.activeTab) body.dataset.activeTab = 'appearance';
+  nav.addEventListener('click', (e) => {
+    const btn = e.target.closest('.settings-nav-item');
+    if (!btn) return;
+    setSettingsTab(btn.dataset.tab);
+    // Clear search when changing tabs so the user sees that tab's groups
+    const search = document.getElementById('settingsSearch');
+    if (search && search.value) {
+      search.value = '';
+      applySettingsSearch();
+    }
+  });
+}
+
+function applySettingsSearch() {
+  const input = document.getElementById('settingsSearch');
+  const body = document.querySelector('.settings-body');
+  if (!input || !body) return;
+  const q = input.value.trim().toLowerCase();
+  if (!q) {
+    body.classList.remove('searching');
+    body.querySelectorAll('.settings-group.search-hidden').forEach(g => g.classList.remove('search-hidden'));
+    return;
+  }
+  body.classList.add('searching');
+  body.querySelectorAll('.settings-group').forEach(group => {
+    const text = group.textContent.toLowerCase();
+    group.classList.toggle('search-hidden', !text.includes(q));
+  });
+}
+
 function initSettingsSearch() {
   const input = document.getElementById('settingsSearch');
   if (!input) return;
-  const apply = () => {
-    const q = input.value.trim().toLowerCase();
-    document.querySelectorAll('.settings-group').forEach(group => {
-      if (!q) { group.style.display = ''; return; }
-      const text = group.textContent.toLowerCase();
-      group.style.display = text.includes(q) ? '' : 'none';
-    });
-    // Hide the save button when filtering — it's a global save and confusing
-    const save = document.getElementById('settingsSave');
-    if (save) save.style.display = q ? 'none' : '';
-  };
-  input.addEventListener('input', apply);
-  // Reset on each settings open
+  input.addEventListener('input', applySettingsSearch);
+  // Reset search + tab when reopening settings
   document.getElementById('settingsToggle')?.addEventListener('click', () => {
-    setTimeout(() => { input.value = ''; apply(); }, 0);
+    setTimeout(() => {
+      input.value = '';
+      setSettingsTab('appearance');
+      applySettingsSearch();
+    }, 0);
   });
 }
 

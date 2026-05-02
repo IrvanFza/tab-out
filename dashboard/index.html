@@ -288,197 +288,239 @@
       <div class="settings-panel" id="settingsPanel">
         <div class="settings-header">
           <h2>Settings</h2>
+          <input type="text" id="settingsSearch" class="settings-search-input" placeholder="Search settings..." autocomplete="off">
           <button class="settings-close" id="settingsClose" title="Close settings">&times;</button>
         </div>
-        <div class="settings-search-wrap">
-          <input type="text" id="settingsSearch" class="settings-search-input" placeholder="Search settings..." autocomplete="off">
-        </div>
-        <div class="settings-body">
+        <div class="settings-layout">
+          <nav class="settings-nav" id="settingsNav">
+            <button class="settings-nav-item active" data-tab="appearance">
+              <span class="settings-nav-icon">🎨</span>Appearance
+            </button>
+            <button class="settings-nav-item" data-tab="dashboard">
+              <span class="settings-nav-icon">▦</span>Dashboard
+            </button>
+            <button class="settings-nav-item" data-tab="tabs">
+              <span class="settings-nav-icon">⊞</span>Tabs &amp; Sessions
+            </button>
+            <button class="settings-nav-item" data-tab="heatmap">
+              <span class="settings-nav-icon">▢</span>Heatmap
+            </button>
+            <button class="settings-nav-item" data-tab="time">
+              <span class="settings-nav-icon">⏱</span>Time &amp; Tools
+            </button>
+            <button class="settings-nav-item" data-tab="personal">
+              <span class="settings-nav-icon">✦</span>Personal
+            </button>
+          </nav>
+          <div class="settings-body">
 
-          <div class="settings-group">
-            <label class="settings-label" for="settingUserName">Your name</label>
-            <p class="settings-hint">Shown after the greeting at the top</p>
-            <input type="text" id="settingUserName" class="settings-input" placeholder="e.g. Alex" maxlength="30">
-          </div>
-
-          <div class="settings-group">
-            <label class="settings-label" for="settingTheme">Theme</label>
-            <p class="settings-hint">"System" follows your computer's appearance and switches automatically.</p>
-            <select id="settingTheme" class="settings-input">
-              <option value="system">System</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </div>
-
-          <div class="settings-group">
-            <label class="settings-label" for="settingStaleWhitelist">Stale-tab whitelist</label>
-            <p class="settings-hint">Domains here never get the stale dot or appear in <strong>Sweep</strong>. One domain per line (e.g. <code>mail.google.com</code>, <code>slack.com</code>).</p>
-            <textarea id="settingStaleWhitelist" class="settings-input" rows="4" placeholder="mail.google.com&#10;slack.com&#10;calendar.google.com" style="font-family: monospace; resize: vertical;"></textarea>
-          </div>
-
-          <div class="settings-group">
-            <label class="settings-label">Click behavior</label>
-            <div class="settings-field settings-field-checkbox">
-              <label class="settings-sublabel">
-                <input type="checkbox" id="settingOpenInBackground"> Open saved/closed tabs in the background
-              </label>
+            <!-- ============ APPEARANCE ============ -->
+            <div class="settings-group" data-tab="appearance">
+              <label class="settings-label" for="settingTheme">Theme</label>
+              <p class="settings-hint">"System" follows your computer's appearance and switches automatically.</p>
+              <select id="settingTheme" class="settings-input">
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
             </div>
-            <p class="settings-hint">When clicking a tab in <strong>Saved for Later</strong>, <strong>Recently Closed</strong>, or the archive, open it in a background tab so you stay on the dashboard.</p>
-          </div>
 
-          <div class="settings-group">
-            <label class="settings-label">Pomodoro timer (minutes)</label>
-            <p class="settings-hint">Work/break duration for the focus timer</p>
-            <div class="settings-row">
-              <div class="settings-field">
-                <label for="settingWorkMin" class="settings-sublabel">Work</label>
-                <input type="number" id="settingWorkMin" class="settings-input settings-input-sm" min="1" max="120"
-                  value="25">
-              </div>
-              <div class="settings-field">
-                <label for="settingBreakMin" class="settings-sublabel">Break</label>
-                <input type="number" id="settingBreakMin" class="settings-input settings-input-sm" min="1" max="60"
-                  value="5">
+            <div class="settings-group" data-tab="appearance">
+              <label class="settings-label">Density &amp; motion</label>
+              <p class="settings-hint">Tighter spacing and less animation for power users.</p>
+              <div class="settings-row">
+                <div class="settings-field settings-field-checkbox">
+                  <label class="settings-sublabel"><input type="checkbox" id="settingCompactMode"> Compact mode</label>
+                </div>
+                <div class="settings-field settings-field-checkbox">
+                  <label class="settings-sublabel"><input type="checkbox" id="settingAnimations"> Animations</label>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="settings-group">
-            <label class="settings-label">Clock display</label>
-            <div class="settings-row">
-              <div class="settings-field">
-                <label for="settingClockFormat" class="settings-sublabel">Format</label>
-                <select id="settingClockFormat" class="settings-input">
-                  <option value="12">12-hour</option>
-                  <option value="24">24-hour</option>
-                </select>
+            <div class="settings-group" data-tab="appearance">
+              <label class="settings-label">Effects</label>
+              <p class="settings-hint">The little flourishes when you close tabs.</p>
+              <div class="settings-row">
+                <div class="settings-field settings-field-checkbox">
+                  <label class="settings-sublabel"><input type="checkbox" id="settingSoundEffects"> Sound effects</label>
+                </div>
+                <div class="settings-field settings-field-checkbox">
+                  <label class="settings-sublabel"><input type="checkbox" id="settingConfetti"> Confetti</label>
+                </div>
               </div>
+            </div>
+
+            <!-- ============ DASHBOARD (section visibility) ============ -->
+            <div class="settings-group" data-tab="dashboard">
+              <label class="settings-label">What to show on the dashboard</label>
+              <p class="settings-hint">Hide sections you don't use — toggles apply when you save.</p>
+              <div class="settings-visibility-grid">
+                <label class="settings-sublabel"><input type="checkbox" id="settingShowWeather"> Weather</label>
+                <label class="settings-sublabel"><input type="checkbox" id="settingShowQuote"> Daily quote</label>
+                <label class="settings-sublabel"><input type="checkbox" id="settingShowPomodoro"> Pomodoro</label>
+                <label class="settings-sublabel"><input type="checkbox" id="settingShowQuickLinks"> Quick links</label>
+                <label class="settings-sublabel"><input type="checkbox" id="settingShowSearch"> Search bar</label>
+                <label class="settings-sublabel"><input type="checkbox" id="settingShowYesterdaySummary"> Yesterday summary</label>
+                <label class="settings-sublabel"><input type="checkbox" id="settingShowHeatmap"> Activity heatmap</label>
+                <label class="settings-sublabel"><input type="checkbox" id="settingShowSuggestions"> Session suggestions</label>
+                <label class="settings-sublabel"><input type="checkbox" id="settingShowSessions"> Sessions</label>
+                <label class="settings-sublabel"><input type="checkbox" id="settingShowRecentlyClosed"> Recently closed</label>
+              </div>
+            </div>
+
+            <!-- ============ TABS & SESSIONS ============ -->
+            <div class="settings-group" data-tab="tabs">
+              <label class="settings-label">Tab thresholds</label>
+              <p class="settings-hint">When tabs count as "stale," when to suggest saving a session, and when to warn you that you've opened too many.</p>
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label for="settingStaleDays" class="settings-sublabel">Stale threshold (days)</label>
+                  <input type="number" id="settingStaleDays" class="settings-input settings-input-sm" min="1" max="90">
+                </div>
+                <div class="settings-field">
+                  <label for="settingSuggestThreshold" class="settings-sublabel">Suggest at N tabs</label>
+                  <input type="number" id="settingSuggestThreshold" class="settings-input settings-input-sm" min="3" max="50">
+                </div>
+              </div>
+              <div class="settings-row" style="margin-top:10px">
+                <div class="settings-field">
+                  <label for="settingTabCap" class="settings-sublabel">Tab cap warning (0 = off)</label>
+                  <input type="number" id="settingTabCap" class="settings-input settings-input-sm" min="0" max="500">
+                </div>
+                <div class="settings-field"></div>
+              </div>
+            </div>
+
+            <div class="settings-group" data-tab="tabs">
+              <label class="settings-label" for="settingStaleWhitelist">Stale-tab whitelist</label>
+              <p class="settings-hint">Domains here never get the stale dot or appear in <strong>Sweep</strong>. One domain per line.</p>
+              <textarea id="settingStaleWhitelist" class="settings-input" rows="4" placeholder="mail.google.com&#10;slack.com&#10;calendar.google.com" style="font-family: monospace; resize: vertical;"></textarea>
+            </div>
+
+            <div class="settings-group" data-tab="tabs">
+              <label class="settings-label">Click behavior</label>
+              <p class="settings-hint">When clicking a tab in <strong>Saved for Later</strong>, <strong>Recently Closed</strong>, or the archive.</p>
               <div class="settings-field settings-field-checkbox">
                 <label class="settings-sublabel">
-                  <input type="checkbox" id="settingShowSeconds"> Show seconds
+                  <input type="checkbox" id="settingOpenInBackground"> Open in the background (stay on dashboard)
                 </label>
               </div>
             </div>
-          </div>
 
-          <div class="settings-group">
-            <label class="settings-label" for="settingSearchEngine">Search engine</label>
-            <select id="settingSearchEngine" class="settings-input">
-              <option value="google">Google</option>
-              <option value="bing">Bing</option>
-              <option value="duckduckgo">DuckDuckGo</option>
-              <option value="brave">Brave Search</option>
-              <option value="ecosia">Ecosia</option>
-            </select>
-          </div>
+            <div class="settings-group" data-tab="tabs">
+              <label class="settings-label" for="settingAutoRefresh">Auto-refresh</label>
+              <p class="settings-hint">How often the dashboard re-fetches your tabs.</p>
+              <select id="settingAutoRefresh" class="settings-input">
+                <option value="0">Manual only</option>
+                <option value="10">Every 10 seconds</option>
+                <option value="30">Every 30 seconds</option>
+                <option value="60">Every minute</option>
+                <option value="120">Every 2 minutes</option>
+                <option value="300">Every 5 minutes</option>
+              </select>
+            </div>
 
-          <div class="settings-group">
-            <label class="settings-label">Daily quote</label>
-            <div class="settings-field settings-field-checkbox" style="margin-bottom:8px">
-              <label class="settings-sublabel">
-                <input type="checkbox" id="settingUseDynamicQuote"> Use dynamic quote
-              </label>
+            <!-- ============ HEATMAP ============ -->
+            <div class="settings-group" data-tab="heatmap">
+              <label class="settings-label" for="settingHeatmapWeeks">Heatmap window</label>
+              <p class="settings-hint">How many weeks of activity to show in the calendar grid.</p>
+              <select id="settingHeatmapWeeks" class="settings-input">
+                <option value="13">13 weeks (3 months)</option>
+                <option value="26">26 weeks (6 months)</option>
+                <option value="52">52 weeks (1 year)</option>
+              </select>
             </div>
-            <p class="settings-hint">Fetches a fresh quote daily from <a href="https://zenquotes.io/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">zenquotes.io</a>. When enabled, the manual quote below is ignored.</p>
-            <div id="manualQuoteFields">
-              <input type="text" id="settingQuoteText" class="settings-input" placeholder="Enter your quote..."
-                maxlength="300">
-              <input type="text" id="settingQuoteAuthor" class="settings-input" placeholder="Author (optional)"
-                maxlength="80">
-            </div>
-          </div>
 
-          <div class="settings-group">
-            <label class="settings-label">What to show on the dashboard</label>
-            <p class="settings-hint">Hide sections you don't use — toggles apply immediately.</p>
-            <div class="settings-visibility-grid">
-              <label class="settings-sublabel"><input type="checkbox" id="settingShowWeather"> Weather</label>
-              <label class="settings-sublabel"><input type="checkbox" id="settingShowQuote"> Daily quote</label>
-              <label class="settings-sublabel"><input type="checkbox" id="settingShowPomodoro"> Pomodoro</label>
-              <label class="settings-sublabel"><input type="checkbox" id="settingShowQuickLinks"> Quick links</label>
-              <label class="settings-sublabel"><input type="checkbox" id="settingShowSearch"> Search bar</label>
-              <label class="settings-sublabel"><input type="checkbox" id="settingShowYesterdaySummary"> Yesterday summary</label>
-              <label class="settings-sublabel"><input type="checkbox" id="settingShowHeatmap"> Activity heatmap</label>
-              <label class="settings-sublabel"><input type="checkbox" id="settingShowSuggestions"> Session suggestions</label>
-              <label class="settings-sublabel"><input type="checkbox" id="settingShowSessions"> Sessions</label>
-              <label class="settings-sublabel"><input type="checkbox" id="settingShowRecentlyClosed"> Recently closed</label>
-            </div>
-          </div>
-
-          <div class="settings-group">
-            <label class="settings-label">Behavior</label>
-            <div class="settings-row">
-              <div class="settings-field">
-                <label for="settingAutoRefresh" class="settings-sublabel">Auto-refresh</label>
-                <select id="settingAutoRefresh" class="settings-input">
-                  <option value="0">Manual only</option>
-                  <option value="10">Every 10s</option>
-                  <option value="30">Every 30s</option>
-                  <option value="60">Every minute</option>
-                  <option value="120">Every 2 min</option>
-                  <option value="300">Every 5 min</option>
-                </select>
-              </div>
-              <div class="settings-field">
-                <label for="settingStaleDays" class="settings-sublabel">Stale threshold (days)</label>
-                <input type="number" id="settingStaleDays" class="settings-input settings-input-sm" min="1" max="90">
-              </div>
-            </div>
-            <div class="settings-row" style="margin-top:10px">
-              <div class="settings-field">
-                <label for="settingHeatmapWeeks" class="settings-sublabel">Heatmap window</label>
-                <select id="settingHeatmapWeeks" class="settings-input">
-                  <option value="13">13 weeks</option>
-                  <option value="26">26 weeks</option>
-                  <option value="52">52 weeks</option>
-                </select>
-              </div>
-              <div class="settings-field">
-                <label for="settingSuggestThreshold" class="settings-sublabel">Suggest at N tabs</label>
-                <input type="number" id="settingSuggestThreshold" class="settings-input settings-input-sm" min="3" max="50">
-              </div>
-            </div>
-            <div class="settings-row" style="margin-top:10px">
-              <div class="settings-field">
-                <label for="settingTabCap" class="settings-sublabel">Tab cap warning (0 = off)</label>
-                <input type="number" id="settingTabCap" class="settings-input settings-input-sm" min="0" max="500">
-              </div>
+            <div class="settings-group" data-tab="heatmap">
+              <label class="settings-label">Week start</label>
               <div class="settings-field settings-field-checkbox">
                 <label class="settings-sublabel"><input type="checkbox" id="settingWeekStartsMonday"> Week starts on Monday</label>
               </div>
+              <p class="settings-hint">Affects the heatmap layout and the day labels.</p>
             </div>
-            <div class="settings-row" style="margin-top:10px">
-              <div class="settings-field settings-field-checkbox">
-                <label class="settings-sublabel"><input type="checkbox" id="settingSoundEffects"> Sound effects</label>
-              </div>
-              <div class="settings-field settings-field-checkbox">
-                <label class="settings-sublabel"><input type="checkbox" id="settingConfetti"> Confetti</label>
-              </div>
-            </div>
-            <div class="settings-row" style="margin-top:10px">
-              <div class="settings-field settings-field-checkbox">
-                <label class="settings-sublabel"><input type="checkbox" id="settingCompactMode"> Compact mode</label>
-              </div>
-              <div class="settings-field settings-field-checkbox">
-                <label class="settings-sublabel"><input type="checkbox" id="settingAnimations"> Animations</label>
-              </div>
-            </div>
-          </div>
 
-          <div class="settings-group">
-            <label class="settings-label">Quick links</label>
-            <p class="settings-hint">Add, remove, or reorder your shortcuts</p>
-            <div class="settings-quick-links-list" id="settingsQuickLinksList"></div>
-            <div class="settings-quick-link-add">
-              <input type="text" id="settingsNewLinkTitle" class="settings-input settings-input-inline"
-                placeholder="Title">
-              <input type="url" id="settingsNewLinkUrl" class="settings-input settings-input-inline"
-                placeholder="https://example.com">
-              <button class="settings-add-btn" id="settingsAddLink" title="Add link">+</button>
+            <!-- ============ TIME & TOOLS ============ -->
+            <div class="settings-group" data-tab="time">
+              <label class="settings-label">Pomodoro timer</label>
+              <p class="settings-hint">Work and break duration in minutes for the focus timer.</p>
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label for="settingWorkMin" class="settings-sublabel">Work</label>
+                  <input type="number" id="settingWorkMin" class="settings-input settings-input-sm" min="1" max="120" value="25">
+                </div>
+                <div class="settings-field">
+                  <label for="settingBreakMin" class="settings-sublabel">Break</label>
+                  <input type="number" id="settingBreakMin" class="settings-input settings-input-sm" min="1" max="60" value="5">
+                </div>
+              </div>
             </div>
-          </div>
 
+            <div class="settings-group" data-tab="time">
+              <label class="settings-label">Clock display</label>
+              <div class="settings-row">
+                <div class="settings-field">
+                  <label for="settingClockFormat" class="settings-sublabel">Format</label>
+                  <select id="settingClockFormat" class="settings-input">
+                    <option value="12">12-hour</option>
+                    <option value="24">24-hour</option>
+                  </select>
+                </div>
+                <div class="settings-field settings-field-checkbox">
+                  <label class="settings-sublabel">
+                    <input type="checkbox" id="settingShowSeconds"> Show seconds
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- ============ PERSONAL ============ -->
+            <div class="settings-group" data-tab="personal">
+              <label class="settings-label" for="settingUserName">Your name</label>
+              <p class="settings-hint">Shown after the greeting at the top.</p>
+              <input type="text" id="settingUserName" class="settings-input" placeholder="e.g. Alex" maxlength="30">
+            </div>
+
+            <div class="settings-group" data-tab="personal">
+              <label class="settings-label" for="settingSearchEngine">Search engine</label>
+              <p class="settings-hint">Powers the search bar at the top of the dashboard.</p>
+              <select id="settingSearchEngine" class="settings-input">
+                <option value="google">Google</option>
+                <option value="bing">Bing</option>
+                <option value="duckduckgo">DuckDuckGo</option>
+                <option value="brave">Brave Search</option>
+                <option value="ecosia">Ecosia</option>
+              </select>
+            </div>
+
+            <div class="settings-group" data-tab="personal">
+              <label class="settings-label">Daily quote</label>
+              <div class="settings-field settings-field-checkbox" style="margin-bottom:8px">
+                <label class="settings-sublabel">
+                  <input type="checkbox" id="settingUseDynamicQuote"> Use dynamic quote
+                </label>
+              </div>
+              <p class="settings-hint">Fetches a fresh quote daily from <a href="https://zenquotes.io/" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">zenquotes.io</a>. When enabled, the manual quote below is ignored.</p>
+              <div id="manualQuoteFields">
+                <input type="text" id="settingQuoteText" class="settings-input" placeholder="Enter your quote..." maxlength="300">
+                <input type="text" id="settingQuoteAuthor" class="settings-input" placeholder="Author (optional)" maxlength="80">
+              </div>
+            </div>
+
+            <div class="settings-group" data-tab="personal">
+              <label class="settings-label">Quick links</label>
+              <p class="settings-hint">Add, remove, or reorder your shortcuts.</p>
+              <div class="settings-quick-links-list" id="settingsQuickLinksList"></div>
+              <div class="settings-quick-link-add">
+                <input type="text" id="settingsNewLinkTitle" class="settings-input settings-input-inline" placeholder="Title">
+                <input type="url" id="settingsNewLinkUrl" class="settings-input settings-input-inline" placeholder="https://example.com">
+                <button class="settings-add-btn" id="settingsAddLink" title="Add link">+</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+        <div class="settings-footer">
           <button class="settings-save" id="settingsSave">Save settings</button>
         </div>
       </div>
