@@ -1634,6 +1634,102 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   opacity: 0.85;
 }
 
+/* ---- Settings: visibility grid (3-col checkbox layout) ---- */
+.settings-visibility-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 16px;
+  margin-top: 4px;
+}
+
+.settings-visibility-grid label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.settings-visibility-grid input[type="checkbox"] {
+  cursor: pointer;
+}
+
+/* ---- Compact mode — tighter spacing across the dashboard ---- */
+body.compact-mode .container {
+  padding: 16px 20px;
+}
+
+body.compact-mode header {
+  margin-bottom: 12px;
+}
+
+body.compact-mode .quick-links {
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+body.compact-mode .search-bar {
+  margin-bottom: 12px;
+}
+
+body.compact-mode .daily-quote {
+  margin-bottom: 12px;
+}
+
+body.compact-mode .section-header {
+  margin-bottom: 10px;
+  margin-top: 0;
+}
+
+body.compact-mode .missions {
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+body.compact-mode .mission-card {
+  padding: 8px;
+}
+
+body.compact-mode .page-chip {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+body.compact-mode .summary-card,
+body.compact-mode .heatmap-section,
+body.compact-mode .sessions-section,
+body.compact-mode .deferred-column,
+body.compact-mode .snooze-section {
+  margin-top: 8px;
+  margin-bottom: 12px;
+}
+
+/* ---- Animations off — kill the fadeUp/transition motion ---- */
+body.animations-off *,
+body.animations-off *::before,
+body.animations-off *::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+}
+
+/* ---- Soft tab-cap warning banner ---- */
+.tab-cap-banner {
+  margin: 8px 0 16px;
+  padding: 10px 14px;
+  font-size: 13px;
+  background: rgba(179, 90, 90, 0.1);
+  border: 1px solid rgba(179, 90, 90, 0.4);
+  color: var(--ink);
+  border-radius: 8px;
+}
+
+.tab-cap-banner strong {
+  color: var(--accent-rose);
+  font-weight: 600;
+}
+
 /* ---- Section action button (e.g. "Save session" in tabs header) ---- */
 .open-tabs-filter {
   font-family: 'DM Sans', sans-serif;

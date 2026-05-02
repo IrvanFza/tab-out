@@ -27,6 +27,28 @@ const DEFAULTS = {
   searchEngine: "google",
   quickLinks: [],
   staleWhitelist: [],
+  // Section visibility — each flag gates one dashboard region
+  showWeather: true,
+  showQuote: true,
+  showPomodoro: true,
+  showQuickLinks: true,
+  showSearch: true,
+  showRecentlyClosed: true,
+  showYesterdaySummary: true,
+  showHeatmap: true,
+  showSuggestions: true,
+  showSessions: true,
+  // Behavior knobs
+  autoRefreshSeconds: 30,    // 0 = manual only
+  soundEffects: true,
+  confettiEffects: true,
+  staleThresholdDays: 7,
+  heatmapWeeks: 26,
+  compactMode: false,
+  animationsEnabled: true,
+  weekStartsOnMonday: false,
+  suggestThreshold: 5,       // min tab count to surface "save as session" banner
+  tabCapWarning: 0,          // 0 = off; otherwise warn when open tabs > N
 };
 
 const VALID_SEARCH_ENGINES = ["google", "bing", "duckduckgo", "brave", "ecosia"];

@@ -75,6 +75,26 @@ let appConfig = {
   searchEngine: 'google',
   quickLinks: [],
   staleWhitelist: [],
+  showWeather: true,
+  showQuote: true,
+  showPomodoro: true,
+  showQuickLinks: true,
+  showSearch: true,
+  showRecentlyClosed: true,
+  showYesterdaySummary: true,
+  showHeatmap: true,
+  showSuggestions: true,
+  showSessions: true,
+  autoRefreshSeconds: 30,
+  soundEffects: true,
+  confettiEffects: true,
+  staleThresholdDays: 7,
+  heatmapWeeks: 26,
+  compactMode: false,
+  animationsEnabled: true,
+  weekStartsOnMonday: false,
+  suggestThreshold: 5,
+  tabCapWarning: 0,
 };
 
 const SEARCH_ENGINES = {
@@ -142,6 +162,59 @@ function applyConfigToUI() {
 
   resetPomodoro();
   renderQuickLinks();
+  applySectionVisibility();
+  applyDisplayMode();
+  applyAutoRefreshInterval();
+}
+
+// Section visibility — show/hide each major dashboard region based on the
+// flags in appConfig. Re-runs on every config save so toggles are instant.
+function applySectionVisibility() {
+  const map = {
+    showWeather: '#weatherWidget',
+    showQuote: '#dailyQuote',
+    showPomodoro: '#pomodoro',
+    showQuickLinks: '#quickLinksNav',
+    showSearch: '#searchForm',
+    showRecentlyClosed: '#recentlyClosedSection',
+    showYesterdaySummary: '#summaryCard',
+    showHeatmap: '#heatmapSection',
+    showSuggestions: '#suggestBanner',
+    showSessions: '#sessionsSection',
+  };
+  for (const [flag, sel] of Object.entries(map)) {
+    const el = document.querySelector(sel);
+    if (!el) continue;
+    if (appConfig[flag] === false) {
+      el.dataset.hiddenByConfig = '1';
+      el.style.display = 'none';
+    } else {
+      // Don't override sections that legitimately stay hidden (e.g. weather
+      // until it loads, sessions when empty). Only clear our own flag and let
+      // the natural render decide.
+      if (el.dataset.hiddenByConfig === '1') {
+        delete el.dataset.hiddenByConfig;
+        el.style.display = '';
+      }
+    }
+  }
+}
+
+// Compact mode + animations — both apply via body classes that the CSS keys off
+function applyDisplayMode() {
+  document.body.classList.toggle('compact-mode', appConfig.compactMode === true);
+  document.body.classList.toggle('animations-off', appConfig.animationsEnabled === false);
+}
+
+// Auto-refresh interval: clear any prior timer and re-arm with the chosen rate.
+let refreshIntervalId = null;
+function applyAutoRefreshInterval() {
+  if (refreshIntervalId) clearInterval(refreshIntervalId);
+  refreshIntervalId = null;
+  const seconds = appConfig.autoRefreshSeconds;
+  if (typeof seconds === 'number' && seconds > 0) {
+    refreshIntervalId = setInterval(() => refreshDynamicContent(), seconds * 1000);
+  }
 }
 
 const ICON_SUN = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.25m6.364.386-1.591 1.591M21 12h-2.25m-.386 6.364-1.591-1.591M12 18.75V21m-4.773-4.227-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0Z" /></svg>';
@@ -351,7 +424,10 @@ function renderRecentlyClosed() {
   const section = document.getElementById('recentlyClosedSection');
   const list = JSON.parse(localStorage.getItem('tabout-recently-closed') || '[]');
   if (!section) return;
-  if (list.length === 0) { section.style.display = 'none'; return; }
+  if (appConfig.showRecentlyClosed === false || list.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
   section.style.display = 'block';
   const countEl = document.getElementById('recentlyClosedCount');
   if (countEl) countEl.textContent = list.length;
@@ -603,6 +679,7 @@ async function focusTabsByUrls(urls) {
  * A filtered noise sweep that descends in pitch, like air moving.
  */
 function playCloseSound() {
+  if (appConfig.soundEffects === false) return;
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const t = ctx.currentTime;
@@ -659,6 +736,7 @@ function playCloseSound() {
  * Pure CSS + JS, no libraries.
  */
 function shootConfetti(x, y) {
+  if (appConfig.confettiEffects === false) return;
   // Color palette drawn from the dashboard's CSS variables
   const colors = [
     '#c8713a', // amber
@@ -1325,10 +1403,11 @@ function initOpenTabsFilter() {
 // A tab is "stale" if Chrome reports it hasn't been visited in 7+ days.
 // chrome.tabs.Tab.lastAccessed is unix-ms, available in Chrome 121+. When the
 // field is null/missing we treat the tab as fresh — never falsely flag.
-const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
 function isStaleTab(tab) {
   if (!tab || typeof tab.lastAccessed !== 'number') return false;
-  if (Date.now() - tab.lastAccessed <= STALE_THRESHOLD_MS) return false;
+  const days = appConfig.staleThresholdDays || 7;
+  const threshold = days * 24 * 60 * 60 * 1000;
+  if (Date.now() - tab.lastAccessed <= threshold) return false;
   // Honor the whitelist — domains the user explicitly never wants flagged
   // (Gmail, Slack, Calendar) so the sweep doesn't nag about always-on tabs.
   const whitelist = appConfig.staleWhitelist || [];
@@ -2158,6 +2237,32 @@ async function refreshDynamicContent() {
 
   // ── Update Sweep Stale button visibility + count ─────────────────────────
   updateSweepStaleButton();
+
+  // ── Soft tab-cap banner (off when cap = 0) ───────────────────────────────
+  updateTabCapBanner(realTabs.length);
+}
+
+function updateTabCapBanner(currentCount) {
+  let banner = document.getElementById('tabCapBanner');
+  const cap = appConfig.tabCapWarning || 0;
+  if (cap === 0 || currentCount <= cap) {
+    if (banner) banner.style.display = 'none';
+    return;
+  }
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'tabCapBanner';
+    banner.className = 'tab-cap-banner';
+    const container = document.querySelector('.container');
+    const after = document.getElementById('tabOutDupeBanner');
+    if (after && after.parentElement === container) {
+      container.insertBefore(banner, after.nextSibling);
+    } else if (container) {
+      container.insertBefore(banner, container.firstChild);
+    }
+  }
+  banner.innerHTML = `Tab cap exceeded — <strong>${currentCount}</strong> open, your soft cap is <strong>${cap}</strong>. Time to sweep some?`;
+  banner.style.display = 'block';
 }
 
 
@@ -2848,8 +2953,32 @@ function initSettingsPanel() {
         .split('\n')
         .map(s => s.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
         .filter(Boolean),
+      // Section visibility
+      showWeather: document.getElementById('settingShowWeather').checked,
+      showQuote: document.getElementById('settingShowQuote').checked,
+      showPomodoro: document.getElementById('settingShowPomodoro').checked,
+      showQuickLinks: document.getElementById('settingShowQuickLinks').checked,
+      showSearch: document.getElementById('settingShowSearch').checked,
+      showRecentlyClosed: document.getElementById('settingShowRecentlyClosed').checked,
+      showYesterdaySummary: document.getElementById('settingShowYesterdaySummary').checked,
+      showHeatmap: document.getElementById('settingShowHeatmap').checked,
+      showSuggestions: document.getElementById('settingShowSuggestions').checked,
+      showSessions: document.getElementById('settingShowSessions').checked,
+      // Behavior
+      autoRefreshSeconds: parseInt(document.getElementById('settingAutoRefresh').value, 10) || 0,
+      soundEffects: document.getElementById('settingSoundEffects').checked,
+      confettiEffects: document.getElementById('settingConfetti').checked,
+      staleThresholdDays: parseInt(document.getElementById('settingStaleDays').value, 10) || 7,
+      heatmapWeeks: parseInt(document.getElementById('settingHeatmapWeeks').value, 10) || 26,
+      compactMode: document.getElementById('settingCompactMode').checked,
+      animationsEnabled: document.getElementById('settingAnimations').checked,
+      weekStartsOnMonday: document.getElementById('settingWeekStartsMonday').checked,
+      suggestThreshold: parseInt(document.getElementById('settingSuggestThreshold').value, 10) || 5,
+      tabCapWarning: parseInt(document.getElementById('settingTabCap').value, 10) || 0,
     };
     await saveAppConfig(updates);
+    // Refresh dependent surfaces immediately
+    refreshDynamicContent();
     overlay.style.display = 'none';
   });
 
@@ -2890,6 +3019,28 @@ function populateSettingsForm() {
   c('settingOpenInBackground', getOpenInBackground());
   f('settingStaleWhitelist', (appConfig.staleWhitelist || []).join('\n'));
   f('settingUserName', appConfig.userName || '');
+  // Section visibility
+  c('settingShowWeather', appConfig.showWeather !== false);
+  c('settingShowQuote', appConfig.showQuote !== false);
+  c('settingShowPomodoro', appConfig.showPomodoro !== false);
+  c('settingShowQuickLinks', appConfig.showQuickLinks !== false);
+  c('settingShowSearch', appConfig.showSearch !== false);
+  c('settingShowRecentlyClosed', appConfig.showRecentlyClosed !== false);
+  c('settingShowYesterdaySummary', appConfig.showYesterdaySummary !== false);
+  c('settingShowHeatmap', appConfig.showHeatmap !== false);
+  c('settingShowSuggestions', appConfig.showSuggestions !== false);
+  c('settingShowSessions', appConfig.showSessions !== false);
+  // Behavior
+  f('settingAutoRefresh', String(typeof appConfig.autoRefreshSeconds === 'number' ? appConfig.autoRefreshSeconds : 30));
+  f('settingStaleDays', appConfig.staleThresholdDays || 7);
+  f('settingHeatmapWeeks', String(appConfig.heatmapWeeks || 26));
+  f('settingSuggestThreshold', appConfig.suggestThreshold || 5);
+  f('settingTabCap', appConfig.tabCapWarning || 0);
+  c('settingWeekStartsMonday', appConfig.weekStartsOnMonday === true);
+  c('settingSoundEffects', appConfig.soundEffects !== false);
+  c('settingConfetti', appConfig.confettiEffects !== false);
+  c('settingCompactMode', appConfig.compactMode === true);
+  c('settingAnimations', appConfig.animationsEnabled !== false);
   f('settingWorkMin', appConfig.pomodoroWorkMinutes);
   f('settingBreakMin', appConfig.pomodoroBreakMinutes);
   f('settingClockFormat', appConfig.clockFormat);
@@ -3098,8 +3249,9 @@ async function cancelSnooze(id) {
 let heatmapData = null;
 
 async function fetchHeatmap() {
+  const weeks = Math.max(4, Math.min(52, appConfig.heatmapWeeks || 26));
   try {
-    const res = await fetch('/api/stats/range?days=182');
+    const res = await fetch(`/api/stats/range?days=${weeks * 7}`);
     if (!res.ok) return;
     heatmapData = await res.json();
   } catch { heatmapData = null; }
@@ -3121,21 +3273,23 @@ function renderHeatmap() {
   const months = document.getElementById('heatmapMonths');
   const totalEl = document.getElementById('heatmapTotal');
   if (!section || !grid || !heatmapData) return;
-
-  // Always show the section so users see the empty state and start filling
-  // it in. Hide only when the data fetch outright failed.
+  if (appConfig.showHeatmap === false) {
+    section.style.display = 'none';
+    return;
+  }
   section.style.display = 'block';
 
   const stats = heatmapData.stats || {};
   // Rebuild the dense 7-row grid going backward from today.
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  // Anchor on the most recent Saturday so each column is one Sun→Sat week.
+  // Anchor on the end-of-week so each column is one full week.
+  // Weekend day = 6 (Saturday) when starting on Sunday, or 0 (Sunday) when starting on Monday.
   const lastDay = new Date(today);
-  // Treat Sunday as start of week. For a full last column, anchor end on Saturday.
-  while (lastDay.getDay() !== 6) lastDay.setDate(lastDay.getDate() + 1);
+  const weekEndDay = appConfig.weekStartsOnMonday ? 0 : 6;
+  while (lastDay.getDay() !== weekEndDay) lastDay.setDate(lastDay.getDate() + 1);
 
-  const weeks = 26;
+  const weeks = Math.max(4, Math.min(52, appConfig.heatmapWeeks || 26));
   const totalDays = weeks * 7;
   const days = [];
   for (let i = totalDays - 1; i >= 0; i--) {
@@ -3157,6 +3311,15 @@ function renderHeatmap() {
   });
 
   if (totalEl) totalEl.textContent = `${total} tab events · last ${weeks} weeks`;
+
+  // Sync the day-name labels with the chosen week start
+  const labelRow = document.querySelector('.heatmap-days-label');
+  if (labelRow) {
+    const labels = appConfig.weekStartsOnMonday
+      ? ['Mon', '', 'Wed', '', 'Fri', '', '']
+      : ['', 'Mon', '', 'Wed', '', 'Fri', ''];
+    labelRow.innerHTML = labels.map(l => `<span>${l}</span>`).join('');
+  }
 
   // Build month labels — show a label at the column where a new month starts.
   // Each column is 7 days; we mark the column index of the first cell of each month.
@@ -3327,7 +3490,7 @@ function renderSessions() {
   const countEl = document.getElementById('sessionsCount');
   if (!section || !list) return;
 
-  if (savedSessions.length === 0) {
+  if (appConfig.showSessions === false || savedSessions.length === 0) {
     section.style.display = 'none';
     return;
   }
@@ -3427,7 +3590,7 @@ function renderYesterdaySummary() {
   const card = document.getElementById('summaryCard');
   const stats = document.getElementById('summaryStats');
   if (!card || !stats) return;
-  if (!yesterdayStat) {
+  if (appConfig.showYesterdaySummary === false || !yesterdayStat) {
     card.style.display = 'none';
     return;
   }
@@ -3452,8 +3615,10 @@ function renderYesterdaySummary() {
 function renderSessionSuggestions() {
   const banner = document.getElementById('suggestBanner');
   if (!banner) return;
+  if (appConfig.showSuggestions === false) { banner.style.display = 'none'; return; }
+  const threshold = Math.max(3, Math.min(50, appConfig.suggestThreshold || 5));
   const tabs = getRealTabs();
-  if (tabs.length < 5) { banner.style.display = 'none'; return; }
+  if (tabs.length < threshold) { banner.style.display = 'none'; return; }
   const groups = {};
   for (const t of tabs) {
     try {
@@ -3464,7 +3629,7 @@ function renderSessionSuggestions() {
   }
   const dismissed = new Set((sessionStorage.getItem('tabout-suggest-dismissed') || '').split(','));
   const candidates = Object.entries(groups)
-    .filter(([host, n]) => n >= 5 && !dismissed.has(host))
+    .filter(([host, n]) => n >= threshold && !dismissed.has(host))
     .filter(([host]) => !savedSessions.some(s => (s.name || '').toLowerCase().includes(host)))
     .sort((a, b) => b[1] - a[1]);
   if (candidates.length === 0) { banner.style.display = 'none'; return; }
@@ -3790,10 +3955,11 @@ renderDashboard();
    static UI (clock, dark mode, settings panel, pomodoro) so no
    event listeners are duplicated and timer state is preserved.
    ---------------------------------------------------------------- */
-setInterval(() => refreshDynamicContent(), 30_000);
+// Auto-refresh is now driven by applyAutoRefreshInterval() so it can be
+// retuned (or disabled) from the settings panel.
 
 // Refresh the moment the tab regains focus — catches reopened tabs being
-// auto-removed from Saved for Later without waiting for the 30s tick.
+// auto-removed from Saved for Later without waiting for the timer.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') refreshDynamicContent();
 });

@@ -699,8 +699,41 @@ router.get('/quote', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/config', (req, res) => {
   try {
-    const { port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks, staleWhitelist } = config;
-    res.json({ port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks: quickLinks || [], staleWhitelist: staleWhitelist || [] });
+    const c = config;
+    res.json({
+      port: c.port,
+      userName: c.userName,
+      pomodoroWorkMinutes: c.pomodoroWorkMinutes,
+      pomodoroBreakMinutes: c.pomodoroBreakMinutes,
+      clockShowSeconds: c.clockShowSeconds,
+      clockFormat: c.clockFormat,
+      quoteText: c.quoteText,
+      quoteAuthor: c.quoteAuthor,
+      useDynamicQuote: c.useDynamicQuote,
+      searchEngine: c.searchEngine,
+      quickLinks: c.quickLinks || [],
+      staleWhitelist: c.staleWhitelist || [],
+      showWeather: c.showWeather !== false,
+      showQuote: c.showQuote !== false,
+      showPomodoro: c.showPomodoro !== false,
+      showQuickLinks: c.showQuickLinks !== false,
+      showSearch: c.showSearch !== false,
+      showRecentlyClosed: c.showRecentlyClosed !== false,
+      showYesterdaySummary: c.showYesterdaySummary !== false,
+      showHeatmap: c.showHeatmap !== false,
+      showSuggestions: c.showSuggestions !== false,
+      showSessions: c.showSessions !== false,
+      autoRefreshSeconds: typeof c.autoRefreshSeconds === 'number' ? c.autoRefreshSeconds : 30,
+      soundEffects: c.soundEffects !== false,
+      confettiEffects: c.confettiEffects !== false,
+      staleThresholdDays: typeof c.staleThresholdDays === 'number' ? c.staleThresholdDays : 7,
+      heatmapWeeks: typeof c.heatmapWeeks === 'number' ? c.heatmapWeeks : 26,
+      compactMode: c.compactMode === true,
+      animationsEnabled: c.animationsEnabled !== false,
+      weekStartsOnMonday: c.weekStartsOnMonday === true,
+      suggestThreshold: typeof c.suggestThreshold === 'number' ? c.suggestThreshold : 5,
+      tabCapWarning: typeof c.tabCapWarning === 'number' ? c.tabCapWarning : 0,
+    });
   } catch (err) {
     console.error('[routes] GET /config failed:', err.message);
     res.status(500).json({ error: 'Failed to fetch config' });
@@ -715,7 +748,17 @@ router.get('/config', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/config', (req, res) => {
   try {
-    const allowed = ['userName', 'pomodoroWorkMinutes', 'pomodoroBreakMinutes', 'clockShowSeconds', 'clockFormat', 'quoteText', 'quoteAuthor', 'useDynamicQuote', 'searchEngine', 'quickLinks', 'staleWhitelist'];
+    const allowed = [
+      'userName', 'pomodoroWorkMinutes', 'pomodoroBreakMinutes', 'clockShowSeconds',
+      'clockFormat', 'quoteText', 'quoteAuthor', 'useDynamicQuote', 'searchEngine',
+      'quickLinks', 'staleWhitelist',
+      'showWeather', 'showQuote', 'showPomodoro', 'showQuickLinks', 'showSearch',
+      'showRecentlyClosed', 'showYesterdaySummary', 'showHeatmap', 'showSuggestions',
+      'showSessions',
+      'autoRefreshSeconds', 'soundEffects', 'confettiEffects', 'staleThresholdDays',
+      'heatmapWeeks', 'compactMode', 'animationsEnabled', 'weekStartsOnMonday',
+      'suggestThreshold', 'tabCapWarning',
+    ];
     const updates = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
@@ -726,8 +769,41 @@ router.patch('/config', (req, res) => {
       return res.status(400).json({ error: 'No valid config keys provided' });
     }
     config.save(updates);
-    const { port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks, staleWhitelist } = config;
-    res.json({ port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks: quickLinks || [], staleWhitelist: staleWhitelist || [] });
+    const c = config;
+    res.json({
+      port: c.port,
+      userName: c.userName,
+      pomodoroWorkMinutes: c.pomodoroWorkMinutes,
+      pomodoroBreakMinutes: c.pomodoroBreakMinutes,
+      clockShowSeconds: c.clockShowSeconds,
+      clockFormat: c.clockFormat,
+      quoteText: c.quoteText,
+      quoteAuthor: c.quoteAuthor,
+      useDynamicQuote: c.useDynamicQuote,
+      searchEngine: c.searchEngine,
+      quickLinks: c.quickLinks || [],
+      staleWhitelist: c.staleWhitelist || [],
+      showWeather: c.showWeather !== false,
+      showQuote: c.showQuote !== false,
+      showPomodoro: c.showPomodoro !== false,
+      showQuickLinks: c.showQuickLinks !== false,
+      showSearch: c.showSearch !== false,
+      showRecentlyClosed: c.showRecentlyClosed !== false,
+      showYesterdaySummary: c.showYesterdaySummary !== false,
+      showHeatmap: c.showHeatmap !== false,
+      showSuggestions: c.showSuggestions !== false,
+      showSessions: c.showSessions !== false,
+      autoRefreshSeconds: typeof c.autoRefreshSeconds === 'number' ? c.autoRefreshSeconds : 30,
+      soundEffects: c.soundEffects !== false,
+      confettiEffects: c.confettiEffects !== false,
+      staleThresholdDays: typeof c.staleThresholdDays === 'number' ? c.staleThresholdDays : 7,
+      heatmapWeeks: typeof c.heatmapWeeks === 'number' ? c.heatmapWeeks : 26,
+      compactMode: c.compactMode === true,
+      animationsEnabled: c.animationsEnabled !== false,
+      weekStartsOnMonday: c.weekStartsOnMonday === true,
+      suggestThreshold: typeof c.suggestThreshold === 'number' ? c.suggestThreshold : 5,
+      tabCapWarning: typeof c.tabCapWarning === 'number' ? c.tabCapWarning : 0,
+    });
   } catch (err) {
     console.error('[routes] PATCH /config failed:', err.message);
     res.status(400).json({ error: err.message });
