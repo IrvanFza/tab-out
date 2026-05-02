@@ -1392,74 +1392,6 @@ function checkTabOutDupes() {
    and renders a card per domain.
    ---------------------------------------------------------------- */
 
-// Masonry — measure each domain card and absolutely position it into the
-// shortest column. Cards are sorted by tab count desc beforehand, so the
-// largest card claims its own column and 1-tab cards pack into the right.
-function applyDomainMasonry() {
-  const container = document.getElementById('openTabsMissions');
-  if (!container) return;
-  const cards = [...container.querySelectorAll('.mission-card')];
-  if (cards.length === 0) {
-    container.classList.remove('masonry-active');
-    container.style.height = '';
-    return;
-  }
-
-  // Step 1: reset to natural flow so we can measure
-  container.classList.remove('masonry-active');
-  container.style.height = '';
-  for (const card of cards) {
-    card.style.position = '';
-    card.style.left = '';
-    card.style.top = '';
-    card.style.width = '';
-  }
-
-  // Step 2: figure out column count and width
-  const containerWidth = container.clientWidth;
-  const minColWidth = 280;
-  const gap = 12;
-  const cols = Math.max(1, Math.floor((containerWidth + gap) / (minColWidth + gap)));
-  if (cols < 2) return; // single column = natural flow is fine
-
-  const colWidth = Math.floor((containerWidth - gap * (cols - 1)) / cols);
-
-  // Step 3: lock card widths so heights measure against final column width
-  for (const card of cards) {
-    card.style.width = colWidth + 'px';
-    card.style.boxSizing = 'border-box';
-  }
-
-  // Force a reflow so getBoundingClientRect picks up the new widths
-  void container.offsetWidth;
-
-  // Step 4: pack each card into the shortest column
-  const colHeights = new Array(cols).fill(0);
-  container.classList.add('masonry-active');
-  for (const card of cards) {
-    const h = card.getBoundingClientRect().height;
-    let minCol = 0;
-    for (let i = 1; i < cols; i++) {
-      if (colHeights[i] < colHeights[minCol]) minCol = i;
-    }
-    card.style.left = (minCol * (colWidth + gap)) + 'px';
-    card.style.top = colHeights[minCol] + 'px';
-    colHeights[minCol] += h + gap;
-  }
-
-  container.style.height = (Math.max(...colHeights) - gap) + 'px';
-}
-
-// Re-pack on window resize (column count may change at breakpoints)
-let masonryResizeRaf = null;
-window.addEventListener('resize', () => {
-  if (masonryResizeRaf) cancelAnimationFrame(masonryResizeRaf);
-  masonryResizeRaf = requestAnimationFrame(() => {
-    masonryResizeRaf = null;
-    applyDomainMasonry();
-  });
-});
-
 // Live inline filter for the open-tabs grid. Matches against visible chip
 // text + tab URL + domain name. Doesn't reveal chips hidden inside the
 // overflow ("+N more") section — those become visible when the user expands.
@@ -2368,8 +2300,6 @@ async function refreshDynamicContent() {
       .join('');
     openTabsSection.style.display = 'block';
     applyOpenTabsFilter();
-    // Wait for layout to settle before measuring heights
-    requestAnimationFrame(() => requestAnimationFrame(applyDomainMasonry));
   } else if (openTabsSection) {
     openTabsSection.style.display = 'none';
   }
