@@ -1615,8 +1615,27 @@ async function renderDeferredColumn() {
     if (!res.ok) throw new Error('Failed to fetch deferred tabs');
     const data = await res.json();
 
-    const active = data.active || [];
+    let active = data.active || [];
     const archived = data.archived || [];
+
+    // Auto-archive any deferred tabs whose URL is open again. If the user
+    // reopens a saved tab (history, link, session restore), it shouldn't
+    // keep nagging them from Saved for Later. Match by exact URL — different
+    // URLs on the same host are genuinely different things.
+    const openUrls = new Set((openTabs || []).map(t => t.url).filter(Boolean));
+    const reopened = active.filter(item => openUrls.has(item.url));
+    if (reopened.length > 0) {
+      active = active.filter(item => !openUrls.has(item.url));
+      // Fire dismissals in parallel; we don't need to await them — the next
+      // refresh will pick up the canonical server state.
+      Promise.all(reopened.map(item =>
+        fetch(`/api/deferred/${item.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dismissed: true }),
+        }).catch(() => { /* ignore — best-effort cleanup */ })
+      ));
+    }
 
     // Hide the whole section when there are no active items. The archive
     // alone isn't worth keeping the section on screen — it'll come back the
@@ -3011,3 +3030,9 @@ renderDashboard();
    event listeners are duplicated and timer state is preserved.
    ---------------------------------------------------------------- */
 setInterval(() => refreshDynamicContent(), 30_000);
+
+// Refresh the moment the tab regains focus — catches reopened tabs being
+// auto-removed from Saved for Later without waiting for the 30s tick.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') refreshDynamicContent();
+});
