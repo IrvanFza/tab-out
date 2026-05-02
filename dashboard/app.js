@@ -46,6 +46,13 @@ function applyTheme(theme) {
 
 applyTheme(getStoredTheme());
 
+// Per-device preference: when on, clicking a URL in Saved for Later /
+// Recently Closed / Archive opens it in a background tab via the extension
+// instead of navigating the foreground.
+function getOpenInBackground() {
+  return localStorage.getItem('tabout-open-in-background') === 'true';
+}
+
 // Live-update when the OS theme flips (only matters in 'system' mode)
 if (window.matchMedia) {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -2056,6 +2063,22 @@ async function renderDashboard() {
    instead of one guard per door.
    ---------------------------------------------------------------- */
 
+// Intercept clicks on saved/closed/archive title links when the user has
+// opted into background opens. Runs in the capture phase so we beat the
+// browser's default navigation. Modifier-clicks (cmd/ctrl/middle) pass
+// through unchanged so the user can still force a specific behavior.
+document.addEventListener('click', (e) => {
+  if (!getOpenInBackground()) return;
+  const link = e.target.closest('.deferred-title, .archive-item-title');
+  if (!link) return;
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+  const url = link.getAttribute('href');
+  if (!url) return;
+  e.preventDefault();
+  e.stopPropagation();
+  sendToExtension('openTabs', { urls: [url] });
+}, true);
+
 document.addEventListener('click', async (e) => {
   // Walk up the DOM from the clicked element to find the nearest
   // element with a data-action attribute
@@ -2600,6 +2623,14 @@ function initSettingsPanel() {
     });
   }
 
+  // Background-open click behavior — also per-device
+  const bgToggle = document.getElementById('settingOpenInBackground');
+  if (bgToggle) {
+    bgToggle.addEventListener('change', () => {
+      localStorage.setItem('tabout-open-in-background', bgToggle.checked ? 'true' : 'false');
+    });
+  }
+
   close.addEventListener('click', () => {
     overlay.style.display = 'none';
   });
@@ -2658,6 +2689,7 @@ function populateSettingsForm() {
   const c = (id, val) => { const el = document.getElementById(id); if (el) el.checked = val; };
 
   f('settingTheme', getStoredTheme());
+  c('settingOpenInBackground', getOpenInBackground());
   f('settingUserName', appConfig.userName || '');
   f('settingWorkMin', appConfig.pomodoroWorkMinutes);
   f('settingBreakMin', appConfig.pomodoroBreakMinutes);
