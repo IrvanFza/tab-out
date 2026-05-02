@@ -453,6 +453,49 @@ header {
   margin: 0 0 12px 0;
 }
 
+/* Compact 1-tab cards — hide the redundant "1 tab open" badge and the
+   right-side tab counter, tighten padding, and slim the gap between the
+   domain header and the single chip below it. The chip itself carries
+   the page title; the header carries the domain name; everything else
+   was empty space in a card with one row of content. */
+.missions .mission-card-single {
+  padding: 8px 10px;
+  gap: 4px;
+}
+
+.missions .mission-card-single .mission-content {
+  gap: 4px;
+}
+
+.missions .mission-card-single .open-tabs-badge {
+  display: none;
+}
+
+.missions .mission-card-single .mission-meta {
+  display: none;
+}
+
+.missions .mission-card-single .mission-top {
+  padding: 0;
+  margin: 0;
+}
+
+.missions .mission-card-single .mission-name {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+.missions .mission-card-single .actions {
+  display: none;
+}
+
+.missions .mission-card-single .page-chip {
+  padding: 4px 8px;
+}
+
 .mission-card {
   background: var(--card-bg);
   border: 1px solid var(--warm-gray);

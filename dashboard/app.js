@@ -1828,8 +1828,12 @@ function renderDomainCard(group, groupIndex) {
 
   const collapsed = isCardCollapsed(stableId);
   const collapsedClass = collapsed ? ' card-collapsed' : '';
+  // Cards with a single tab get a compact look — the dashboard wastes a lot
+  // of vertical space when every 1-tab domain has a full header + padding
+  // around what is essentially one chip.
+  const singleClass = tabCount === 1 ? ' mission-card-single' : '';
   return `
-    <div class="mission-card domain-card${collapsedClass} ${hasDupes ? 'has-amber-bar' : 'has-neutral-bar'}" data-domain-id="${stableId}">
+    <div class="mission-card domain-card${collapsedClass}${singleClass} ${hasDupes ? 'has-amber-bar' : 'has-neutral-bar'}" data-domain-id="${stableId}">
       <div class="status-bar"${statusBarStyle}></div>
       <div class="mission-content">
         <div class="mission-top" data-action="toggle-card" data-domain-id="${stableId}" title="Click to collapse / expand">
