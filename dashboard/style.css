@@ -438,12 +438,20 @@ header {
 }
 
 /* ---- Mission Cards ---- */
+/* Masonry layout via CSS columns — short cards pack into the gaps left by
+   tall cards, so the grid stays dense even when one card has many tabs. */
 .missions {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  align-items: start;
-  gap: 12px;
+  column-width: 280px;
+  column-gap: 12px;
   margin-bottom: 40px;
+}
+
+.missions .mission-card {
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  page-break-inside: avoid;
+  margin-bottom: 12px;
+  width: 100%;
 }
 
 .mission-card {
