@@ -59,11 +59,13 @@ async function updateBadge() {
 // Update the badge immediately when the extension is first installed
 chrome.runtime.onInstalled.addListener(() => {
   updateBadge();
+  backfillFromHistory();
 });
 
 // Update the badge when Chrome starts up (e.g. after a reboot)
 chrome.runtime.onStartup.addListener(() => {
   updateBadge();
+  backfillFromHistory();
 });
 
 // Update the badge whenever a new tab is opened — the user might be adding
@@ -95,6 +97,70 @@ async function recordTabEvent(type, url) {
       body: JSON.stringify({ type, domain }),
     });
   } catch { /* server may be down — drop the event */ }
+}
+
+// ─── History backfill ──────────────────────────────────────────────────────
+// Pulls the user's chrome.history visits (last ~365 days) and aggregates them
+// into daily_stats so the heatmap reflects their actual browsing past, not
+// just events recorded since Tab Out was installed. Runs once per major
+// version bump or once if the flag isn't set; the server's INSERT OR IGNORE
+// guarantees we never clobber live event counters.
+
+const BACKFILL_VERSION = 1;
+
+async function backfillFromHistory() {
+  try {
+    const stored = await chrome.storage.local.get('historyBackfillVersion');
+    if (stored.historyBackfillVersion === BACKFILL_VERSION) return;
+
+    if (!chrome.history || !chrome.history.search) return;
+
+    // Pull ~365 days of history. chrome.history.search caps at 1k results
+    // by default — request a high maxResults so we get most visits. For
+    // truly heavy users this still won't be exhaustive, but it covers the
+    // visible heatmap window.
+    const startTime = Date.now() - 365 * 24 * 60 * 60 * 1000;
+    const items = await chrome.history.search({
+      text: '',
+      startTime,
+      maxResults: 100000,
+    });
+    if (!Array.isArray(items) || items.length === 0) {
+      await chrome.storage.local.set({ historyBackfillVersion: BACKFILL_VERSION });
+      return;
+    }
+
+    // Aggregate: per-day visit count + per-domain counts. We use lastVisitTime
+    // as the bucket. visitCount applies to the URL across all time, so we'd
+    // overcount if we used it; safer to count one event per HistoryItem.
+    const byDay = {};
+    for (const item of items) {
+      if (!item.lastVisitTime) continue;
+      const day = new Date(item.lastVisitTime).toISOString().slice(0, 10);
+      if (!byDay[day]) byDay[day] = { opens: 0, closes: 0, domains: {} };
+      byDay[day].opens += 1;
+      try {
+        const host = new URL(item.url).hostname;
+        if (host) byDay[day].domains[host] = (byDay[day].domains[host] || 0) + 1;
+      } catch { /* skip unparseable */ }
+    }
+
+    const days = Object.entries(byDay).map(([day, agg]) => ({
+      day,
+      opens: agg.opens,
+      closes: 0,                // history doesn't track closes
+      domains: agg.domains,
+    }));
+
+    const res = await fetch('http://localhost:3456/api/stats/backfill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days }),
+    });
+    if (res.ok) {
+      await chrome.storage.local.set({ historyBackfillVersion: BACKFILL_VERSION });
+    }
+  } catch { /* server may be down — try again on next startup */ }
 }
 
 // ─── Snooze waker ──────────────────────────────────────────────────────────

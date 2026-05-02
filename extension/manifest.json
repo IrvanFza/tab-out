@@ -6,7 +6,8 @@
   "permissions": [
     "tabs",
     "activeTab",
-    "alarms"
+    "alarms",
+    "history"
   ],
   "host_permissions": [
     "http://localhost:3456/*"

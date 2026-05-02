@@ -54,6 +54,7 @@ const {
   upsertDailyStat,
   getDailyStat,
   getDailyStatsRange,
+  insertDailyStatIfMissing,
 } = require('./db');
 
 // An Express Router is like a mini-app: it holds a group of related routes.
@@ -658,6 +659,31 @@ router.get('/stats/day/:day', (req, res) => {
   } catch (err) {
     console.error('[routes] GET /stats/day/:day failed:', err.message);
     res.status(500).json({ error: 'Failed to fetch day' });
+  }
+});
+
+// One-shot bulk backfill from chrome.history. Body: { days: [{day, opens,
+// closes, domains}] }. Only fills days that don't already have a row so we
+// never clobber live event counters.
+router.post('/stats/backfill', (req, res) => {
+  try {
+    const days = (req.body && req.body.days) || [];
+    if (!Array.isArray(days)) return res.status(400).json({ error: 'days array required' });
+    let inserted = 0;
+    for (const d of days) {
+      if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d.day)) continue;
+      const result = insertDailyStatIfMissing.run({
+        day: d.day,
+        tabs_opened: Number(d.opens) || 0,
+        tabs_closed: Number(d.closes) || 0,
+        domains_json: JSON.stringify(d.domains || {}),
+      });
+      if (result.changes > 0) inserted += 1;
+    }
+    res.json({ success: true, inserted, total: days.length });
+  } catch (err) {
+    console.error('[routes] POST /stats/backfill failed:', err.message);
+    res.status(500).json({ error: 'Failed to backfill' });
   }
 });
 

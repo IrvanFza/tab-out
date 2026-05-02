@@ -527,6 +527,13 @@ const getDailyStatsRange = db.prepare(`
   ORDER BY day ASC
 `);
 
+// Insert-or-ignore: only fills days that don't yet have a row. Used by the
+// chrome.history backfill so we never clobber the live tab-event counters.
+const insertDailyStatIfMissing = db.prepare(`
+  INSERT OR IGNORE INTO daily_stats (day, tabs_opened, tabs_closed, domains_json)
+  VALUES (:day, :tabs_opened, :tabs_closed, :domains_json)
+`);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // clearAllMissions — function helper
 //
@@ -603,4 +610,5 @@ module.exports = {
   upsertDailyStat,  // ({ day, tabs_opened, tabs_closed, domains_json })
   getDailyStat,     // ({ day })
   getDailyStatsRange, // ({ start, end }) → array of rows
+  insertDailyStatIfMissing, // ({ day, tabs_opened, tabs_closed, domains_json })
 };
