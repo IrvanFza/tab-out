@@ -1786,6 +1786,238 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   padding: 8px 0;
 }
 
+/* ---- Tab activity heatmap (GitHub-style calendar) ---- */
+.heatmap-section {
+  margin: 12px 0 32px;
+}
+
+.heatmap-wrap {
+  background: var(--card-bg);
+  border: 1px solid var(--warm-gray);
+  border-radius: 10px;
+  padding: 14px 18px 12px;
+  overflow-x: auto;
+}
+
+.heatmap-months {
+  display: grid;
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 28px;
+  margin-bottom: 4px;
+  gap: 2px;
+}
+
+.heatmap-months span {
+  height: 12px;
+  line-height: 12px;
+  white-space: nowrap;
+}
+
+.heatmap-grid-wrap {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.heatmap-days-label {
+  display: grid;
+  grid-template-rows: repeat(7, 11px);
+  gap: 2px;
+  font-size: 9px;
+  color: var(--muted);
+  width: 22px;
+  padding-top: 1px;
+}
+
+.heatmap-days-label span {
+  line-height: 11px;
+  height: 11px;
+}
+
+.heatmap-grid {
+  display: grid;
+  grid-auto-flow: row;
+  grid-template-rows: repeat(7, 11px);
+  gap: 2px;
+}
+
+.heatmap-cell {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--warm-gray);
+  cursor: pointer;
+  transition: outline 0.1s;
+}
+
+.heatmap-cell:hover {
+  outline: 1px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.heatmap-cell-empty {
+  background: transparent;
+  cursor: default;
+}
+
+.heatmap-cell-empty:hover {
+  outline: none;
+}
+
+/* Color buckets — amber gradient against the warm palette */
+.heatmap-cell-l0 { background: var(--warm-gray); }
+.heatmap-cell-l1 { background: rgba(200, 113, 58, 0.25); }
+.heatmap-cell-l2 { background: rgba(200, 113, 58, 0.45); }
+.heatmap-cell-l3 { background: rgba(200, 113, 58, 0.7); }
+.heatmap-cell-l4 { background: var(--accent-amber); }
+
+/* Dark-mode variants — the sage palette reads better against the dark card */
+body.dark-mode .heatmap-cell-l0 { background: #2f2f36; }
+body.dark-mode .heatmap-cell-l1 { background: rgba(90, 122, 98, 0.4); }
+body.dark-mode .heatmap-cell-l2 { background: rgba(90, 122, 98, 0.65); }
+body.dark-mode .heatmap-cell-l3 { background: rgba(90, 122, 98, 0.85); }
+body.dark-mode .heatmap-cell-l4 { background: var(--accent-sage); }
+
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 10px;
+  justify-content: flex-end;
+  padding-right: 18px;
+}
+
+.heatmap-legend .heatmap-cell {
+  cursor: default;
+}
+
+.heatmap-legend .heatmap-cell:hover {
+  outline: none;
+}
+
+/* ---- Day-detail modal (heatmap cell click) ---- */
+.day-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.day-panel {
+  width: min(480px, 100%);
+  max-height: 80vh;
+  background: var(--card-bg);
+  border: 1px solid var(--warm-gray);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--warm-gray);
+}
+
+.day-header h2 {
+  font-family: 'Newsreader', serif;
+  font-style: italic;
+  font-weight: 400;
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.day-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.day-close:hover { color: var(--ink); }
+
+.day-body {
+  padding: 18px 20px;
+  overflow-y: auto;
+}
+
+.day-loading, .day-empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+  padding: 20px 0;
+}
+
+.day-stats {
+  display: flex;
+  gap: 32px;
+  margin-bottom: 16px;
+}
+
+.day-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.day-stat-num {
+  font-family: 'Newsreader', serif;
+  font-size: 28px;
+  color: var(--ink);
+}
+
+.day-stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.day-section-title {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--warm-gray);
+}
+
+.day-domains {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.day-domain {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.day-domain-name {
+  color: var(--ink);
+}
+
+.day-domain-count {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ---- Workspace tabs above sessions list ---- */
 .workspace-tabs {
   display: flex;

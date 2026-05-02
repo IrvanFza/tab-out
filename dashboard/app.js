@@ -1963,6 +1963,9 @@ async function renderStaticDashboard() {
   // --- Inline filter for open tabs ---
   initOpenTabsFilter();
 
+  // --- Tab activity heatmap ---
+  initHeatmap();
+
   // ── Fetch tabs + render dynamic content ────────────────────────────────
   await refreshDynamicContent();
 }
@@ -2145,12 +2148,13 @@ async function refreshDynamicContent() {
   // ── Render recently closed tabs ─────────────────────────────────────────
   renderRecentlyClosed();
 
-  // ── Load notes + sessions + snoozes + yesterday stats in parallel ────────
-  await Promise.all([fetchSessions(), fetchTabNotes(), fetchSnoozes(), fetchYesterdayStats()]);
+  // ── Load notes + sessions + snoozes + yesterday stats + heatmap in parallel ─
+  await Promise.all([fetchSessions(), fetchTabNotes(), fetchSnoozes(), fetchYesterdayStats(), fetchHeatmap()]);
   renderSessions();
   renderSnoozes();
   renderYesterdaySummary();
   renderSessionSuggestions();
+  renderHeatmap();
 
   // ── Update Sweep Stale button visibility + count ─────────────────────────
   updateSweepStaleButton();
@@ -3086,6 +3090,189 @@ async function cancelSnooze(id) {
     showToast('Snooze cancelled');
     setTimeout(() => refreshDynamicContent(), 300);
   } catch { showToast('Failed to cancel'); }
+}
+
+// Tab activity heatmap — last 26 weeks of daily_stats rendered as a
+// GitHub-contribution-graph. Color buckets are computed against the max
+// activity in the window so the gradient self-scales to the user's volume.
+let heatmapData = null;
+
+async function fetchHeatmap() {
+  try {
+    const res = await fetch('/api/stats/range?days=182');
+    if (!res.ok) return;
+    heatmapData = await res.json();
+  } catch { heatmapData = null; }
+}
+
+function bucketForCount(count, max) {
+  if (!count || count <= 0) return 0;
+  if (max <= 1) return 1;
+  const ratio = count / max;
+  if (ratio < 0.25) return 1;
+  if (ratio < 0.5) return 2;
+  if (ratio < 0.75) return 3;
+  return 4;
+}
+
+function renderHeatmap() {
+  const section = document.getElementById('heatmapSection');
+  const grid = document.getElementById('heatmapGrid');
+  const months = document.getElementById('heatmapMonths');
+  const totalEl = document.getElementById('heatmapTotal');
+  if (!section || !grid || !heatmapData) return;
+
+  // Always show the section so users see the empty state and start filling
+  // it in. Hide only when the data fetch outright failed.
+  section.style.display = 'block';
+
+  const stats = heatmapData.stats || {};
+  // Rebuild the dense 7-row grid going backward from today.
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  // Anchor on the most recent Saturday so each column is one Sun→Sat week.
+  const lastDay = new Date(today);
+  // Treat Sunday as start of week. For a full last column, anchor end on Saturday.
+  while (lastDay.getDay() !== 6) lastDay.setDate(lastDay.getDate() + 1);
+
+  const weeks = 26;
+  const totalDays = weeks * 7;
+  const days = [];
+  for (let i = totalDays - 1; i >= 0; i--) {
+    const d = new Date(lastDay);
+    d.setDate(d.getDate() - i);
+    days.push(d);
+  }
+
+  // Compute max for color scaling
+  let maxCount = 0;
+  let total = 0;
+  const dayCounts = days.map(d => {
+    const key = d.toISOString().slice(0, 10);
+    const s = stats[key];
+    const n = s ? s.total : 0;
+    if (n > maxCount) maxCount = n;
+    total += n;
+    return { date: d, key, count: n, future: d > today };
+  });
+
+  if (totalEl) totalEl.textContent = `${total} tab events · last ${weeks} weeks`;
+
+  // Build month labels — show a label at the column where a new month starts.
+  // Each column is 7 days; we mark the column index of the first cell of each month.
+  const monthLabels = [];
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  for (let col = 0; col < weeks; col++) {
+    const firstCellInCol = dayCounts[col * 7];
+    if (!firstCellInCol) continue;
+    const month = firstCellInCol.date.getMonth();
+    const prevCol = col > 0 ? dayCounts[(col - 1) * 7] : null;
+    if (!prevCol || prevCol.date.getMonth() !== month) {
+      monthLabels.push({ col, label: monthNames[month] });
+    }
+  }
+  if (months) {
+    months.innerHTML = '';
+    months.style.gridTemplateColumns = `repeat(${weeks}, 13px)`;
+    for (let col = 0; col < weeks; col++) {
+      const m = monthLabels.find(x => x.col === col);
+      const span = document.createElement('span');
+      if (m) span.textContent = m.label;
+      months.appendChild(span);
+    }
+  }
+
+  // Render the grid: 7 rows × weeks columns, column-major fill so each column
+  // is a Sunday→Saturday week.
+  grid.style.gridTemplateColumns = `repeat(${weeks}, 13px)`;
+  grid.innerHTML = '';
+  // Build per-day cells in row-major order so CSS grid places them correctly:
+  //  cells must be ordered row-by-row (all of row 0 across columns, then row 1, ...)
+  for (let row = 0; row < 7; row++) {
+    for (let col = 0; col < weeks; col++) {
+      const idx = col * 7 + row;
+      const d = dayCounts[idx];
+      const cell = document.createElement('div');
+      cell.className = 'heatmap-cell';
+      if (!d || d.future) {
+        cell.classList.add('heatmap-cell-empty');
+      } else {
+        cell.classList.add(`heatmap-cell-l${bucketForCount(d.count, maxCount)}`);
+        cell.dataset.day = d.key;
+        cell.title = `${formatHeatmapDate(d.date)} — ${d.count} event${d.count !== 1 ? 's' : ''}`;
+      }
+      grid.appendChild(cell);
+    }
+  }
+}
+
+function formatHeatmapDate(d) {
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+async function openDayDetail(dayKey) {
+  if (!dayKey) return;
+  const overlay = document.getElementById('dayOverlay');
+  const title = document.getElementById('dayTitle');
+  const body = document.getElementById('dayBody');
+  if (!overlay || !body) return;
+
+  const d = new Date(dayKey + 'T00:00:00');
+  if (title) title.textContent = formatHeatmapDate(d);
+  body.innerHTML = `<div class="day-loading">Loading...</div>`;
+  overlay.style.display = 'flex';
+
+  try {
+    const res = await fetch(`/api/stats/day/${dayKey}`);
+    const data = await res.json();
+    if (!data.stat) {
+      body.innerHTML = `<div class="day-empty">No tab activity recorded for this day.</div>`;
+      return;
+    }
+    const top = Object.entries(data.stat.domains || {})
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10);
+    body.innerHTML = `
+      <div class="day-stats">
+        <div class="day-stat"><div class="day-stat-num">${data.stat.tabs_opened}</div><div class="day-stat-label">Opened</div></div>
+        <div class="day-stat"><div class="day-stat-num">${data.stat.tabs_closed}</div><div class="day-stat-label">Closed</div></div>
+        <div class="day-stat"><div class="day-stat-num">${Object.keys(data.stat.domains || {}).length}</div><div class="day-stat-label">Domains</div></div>
+      </div>
+      ${top.length ? `<div class="day-section-title">Most active domains</div>
+      <div class="day-domains">
+        ${top.map(([host, n]) => `<div class="day-domain"><span class="day-domain-name">${host}</span><span class="day-domain-count">${n}</span></div>`).join('')}
+      </div>` : ''}
+    `;
+  } catch {
+    body.innerHTML = `<div class="day-empty">Failed to load this day.</div>`;
+  }
+}
+
+function closeDayDetail() {
+  const overlay = document.getElementById('dayOverlay');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function initHeatmap() {
+  const grid = document.getElementById('heatmapGrid');
+  const overlay = document.getElementById('dayOverlay');
+  const close = document.getElementById('dayClose');
+  if (grid) {
+    grid.addEventListener('click', (e) => {
+      const cell = e.target.closest('.heatmap-cell');
+      if (!cell || !cell.dataset.day) return;
+      openDayDetail(cell.dataset.day);
+    });
+  }
+  if (close) close.addEventListener('click', closeDayDetail);
+  if (overlay) overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeDayDetail();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlay && overlay.style.display !== 'none') {
+      closeDayDetail();
+    }
+  });
 }
 
 async function fetchYesterdayStats() {

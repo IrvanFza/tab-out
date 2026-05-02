@@ -52,6 +52,7 @@ const {
   deleteSnooze,
   upsertDailyStat,
   getDailyStat,
+  getDailyStatsRange,
 } = require('./db');
 
 // An Express Router is like a mini-app: it holds a group of related routes.
@@ -579,6 +580,57 @@ router.get('/stats/yesterday', (req, res) => {
   } catch (err) {
     console.error('[routes] GET /stats/yesterday failed:', err.message);
     res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+router.get('/stats/range', (req, res) => {
+  try {
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 182, 7), 730);
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - (days - 1));
+    const startDay = start.toISOString().slice(0, 10);
+    const endDay = end.toISOString().slice(0, 10);
+    const rows = getDailyStatsRange.all({ start: startDay, end: endDay });
+    const map = {};
+    for (const r of rows) {
+      let domains = {};
+      try { domains = JSON.parse(r.domains_json); } catch { }
+      map[r.day] = {
+        tabs_opened: r.tabs_opened,
+        tabs_closed: r.tabs_closed,
+        total: r.tabs_opened + r.tabs_closed,
+        domains,
+      };
+    }
+    res.json({ start: startDay, end: endDay, days, stats: map });
+  } catch (err) {
+    console.error('[routes] GET /stats/range failed:', err.message);
+    res.status(500).json({ error: 'Failed to fetch range' });
+  }
+});
+
+router.get('/stats/day/:day', (req, res) => {
+  try {
+    const day = String(req.params.day || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+      return res.status(400).json({ error: 'day must be YYYY-MM-DD' });
+    }
+    const row = getDailyStat.get({ day });
+    if (!row) return res.json({ stat: null });
+    let domains = {};
+    try { domains = JSON.parse(row.domains_json); } catch { }
+    res.json({
+      stat: {
+        day: row.day,
+        tabs_opened: row.tabs_opened,
+        tabs_closed: row.tabs_closed,
+        domains,
+      },
+    });
+  } catch (err) {
+    console.error('[routes] GET /stats/day/:day failed:', err.message);
+    res.status(500).json({ error: 'Failed to fetch day' });
   }
 });
 

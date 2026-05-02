@@ -516,6 +516,13 @@ const getDailyStat = db.prepare(`
   SELECT * FROM daily_stats WHERE day = :day
 `);
 
+const getDailyStatsRange = db.prepare(`
+  SELECT day, tabs_opened, tabs_closed, domains_json
+  FROM   daily_stats
+  WHERE  day >= :start AND day <= :end
+  ORDER BY day ASC
+`);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // clearAllMissions — function helper
 //
@@ -590,4 +597,5 @@ module.exports = {
   deleteSnooze,     // ({ id })
   upsertDailyStat,  // ({ day, tabs_opened, tabs_closed, domains_json })
   getDailyStat,     // ({ day })
+  getDailyStatsRange, // ({ start, end }) → array of rows
 };

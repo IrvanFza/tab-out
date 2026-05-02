@@ -214,6 +214,47 @@
     </div>
 
     <!-- ================================================================
+       TAB ACTIVITY HEATMAP — GitHub-contribution-graph style calendar
+       of the last 26 weeks. Click a cell to see that day's detail.
+       ================================================================ -->
+    <div class="heatmap-section" id="heatmapSection" style="display:none">
+      <div class="section-header">
+        <h2>Tab activity</h2>
+        <div class="section-line"></div>
+        <div class="section-count" id="heatmapTotal"></div>
+      </div>
+      <div class="heatmap-wrap">
+        <div class="heatmap-months" id="heatmapMonths"></div>
+        <div class="heatmap-grid-wrap">
+          <div class="heatmap-days-label">
+            <span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span>
+          </div>
+          <div class="heatmap-grid" id="heatmapGrid"></div>
+        </div>
+      </div>
+      <div class="heatmap-legend">
+        <span>Less</span>
+        <span class="heatmap-cell heatmap-cell-l0"></span>
+        <span class="heatmap-cell heatmap-cell-l1"></span>
+        <span class="heatmap-cell heatmap-cell-l2"></span>
+        <span class="heatmap-cell heatmap-cell-l3"></span>
+        <span class="heatmap-cell heatmap-cell-l4"></span>
+        <span>More</span>
+      </div>
+    </div>
+
+    <!-- Detail modal for clicking a heatmap cell -->
+    <div class="day-overlay" id="dayOverlay" style="display:none">
+      <div class="day-panel">
+        <div class="day-header">
+          <h2 id="dayTitle">May 1, 2026</h2>
+          <button class="day-close" id="dayClose">&times;</button>
+        </div>
+        <div class="day-body" id="dayBody"></div>
+      </div>
+    </div>
+
+    <!-- ================================================================
        SESSIONS — saved snapshots of a set of tabs you can restore later.
        Lives below the columns as a full-width collapsible row.
        ================================================================ -->
