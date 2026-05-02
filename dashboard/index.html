@@ -268,7 +268,9 @@
       <div class="sessions-body" id="sessionsBody">
         <div class="sessions-list" id="sessionsList"></div>
         <div class="sessions-empty" id="sessionsEmpty" style="display:none">
-          No saved sessions yet.
+          <div class="empty-icon">📚</div>
+          <div class="empty-title">No saved sessions yet</div>
+          <div class="empty-hint">Click <strong>Save session</strong> above the open-tabs list to bookmark the current set, or hit <kbd>⌘K</kbd> then <kbd>&gt;</kbd> for the same shortcut.</div>
         </div>
       </div>
     </div>
@@ -287,6 +289,9 @@
         <div class="settings-header">
           <h2>Settings</h2>
           <button class="settings-close" id="settingsClose" title="Close settings">&times;</button>
+        </div>
+        <div class="settings-search-wrap">
+          <input type="text" id="settingsSearch" class="settings-search-input" placeholder="Search settings..." autocomplete="off">
         </div>
         <div class="settings-body">
 
@@ -480,6 +485,79 @@
     </div>
 
   </div><!-- end .container -->
+
+  <!-- ================================================================
+     SNOOZE PICKER — quick-pick popover for snoozing a tab.
+     ================================================================ -->
+  <div class="popover-overlay" id="snoozeOverlay" style="display:none">
+    <div class="popover-panel popover-panel-sm">
+      <div class="popover-header">
+        <h2 id="snoozeTitle">Snooze tab</h2>
+        <button class="popover-close" id="snoozeCloseBtn">&times;</button>
+      </div>
+      <p class="popover-hint">Reopen this tab automatically at:</p>
+      <div class="snooze-quick-grid">
+        <button class="snooze-quick" data-snooze-choice="1h"><strong>1 hour</strong><span id="snoozeHint1h"></span></button>
+        <button class="snooze-quick" data-snooze-choice="3h"><strong>3 hours</strong><span id="snoozeHint3h"></span></button>
+        <button class="snooze-quick" data-snooze-choice="tonight"><strong>Tonight</strong><span>6:00 PM</span></button>
+        <button class="snooze-quick" data-snooze-choice="tomorrow"><strong>Tomorrow</strong><span>9:00 AM</span></button>
+        <button class="snooze-quick" data-snooze-choice="weekend"><strong>This weekend</strong><span id="snoozeHintWeekend"></span></button>
+        <button class="snooze-quick" data-snooze-choice="monday"><strong>Monday</strong><span>9:00 AM</span></button>
+      </div>
+      <div class="snooze-custom">
+        <input type="text" id="snoozeCustomInput" class="popover-input" placeholder='Custom (e.g. "friday 5pm", "2h", "next tuesday")'>
+        <button class="popover-btn popover-btn-primary" id="snoozeCustomBtn">Snooze</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+     NOTE EDITOR — popover textarea for adding/editing tab notes.
+     ================================================================ -->
+  <div class="popover-overlay" id="noteOverlay" style="display:none">
+    <div class="popover-panel popover-panel-sm">
+      <div class="popover-header">
+        <h2>Note</h2>
+        <button class="popover-close" id="noteCloseBtn">&times;</button>
+      </div>
+      <div class="popover-tab-line" id="noteTabLine"></div>
+      <textarea id="noteTextarea" class="popover-textarea" rows="5" placeholder="Why is this tab open? Add reminders, deadlines, links to follow up on..."></textarea>
+      <div class="popover-footer">
+        <button class="popover-btn popover-btn-danger" id="noteDeleteBtn" style="display:none">Remove note</button>
+        <div class="popover-footer-spacer"></div>
+        <button class="popover-btn" id="noteCancelBtn">Cancel</button>
+        <button class="popover-btn popover-btn-primary" id="noteSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+     KEYBOARD SHORTCUTS SHEET — press ? to open.
+     ================================================================ -->
+  <div class="popover-overlay" id="shortcutsOverlay" style="display:none">
+    <div class="popover-panel">
+      <div class="popover-header">
+        <h2>Keyboard shortcuts</h2>
+        <button class="popover-close" id="shortcutsCloseBtn">&times;</button>
+      </div>
+      <div class="shortcuts-grid">
+        <div class="shortcut-row"><kbd>⌘</kbd><kbd>K</kbd><span>Open command palette / jump to tab</span></div>
+        <div class="shortcut-row"><kbd>⌘</kbd><kbd>K</kbd>then<kbd>&gt;</kbd><span>Run a command (Save session, Sweep stale, etc.)</span></div>
+        <div class="shortcut-row"><kbd>⌘</kbd><kbd>/</kbd><span>Focus the open-tabs filter</span></div>
+        <div class="shortcut-row"><kbd>?</kbd><span>This shortcut sheet</span></div>
+        <div class="shortcut-row"><kbd>Esc</kbd><span>Close any open modal / palette / popover</span></div>
+        <div class="shortcut-row"><kbd>↑</kbd><kbd>↓</kbd><span>Navigate within the command palette</span></div>
+        <div class="shortcut-row"><kbd>↵</kbd><span>Activate selected palette item</span></div>
+        <div class="shortcut-row"><kbd>Shift</kbd>+click chip<span>Multi-select tabs for batch actions</span></div>
+        <div class="shortcut-row">Right-click chip<span>Context menu: Save / Snooze / Note / Copy URL / Close</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+     CONTEXT MENU — chip right-click. Hidden until summoned.
+     ================================================================ -->
+  <div class="context-menu" id="contextMenu" style="display:none"></div>
 
   <!-- ================================================================
      SWEEP STALE TABS PREVIEW — modal lists the tabs about to be swept

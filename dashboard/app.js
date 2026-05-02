@@ -848,11 +848,36 @@ function animateCardOut(card) {
   }, 300);
 }
 
-function showToast(message) {
+// showToast(message, options?)
+//   options.undo = async function — shows an Undo link for ~5s; clicking it
+//                  hides the toast and runs the function.
+//   options.duration = number ms (defaults: 2500 normal / 5000 with undo)
+let toastTimer = null;
+function showToast(message, options = {}) {
   const toast = document.getElementById('toast');
-  document.getElementById('toastText').textContent = message;
+  if (!toast) return;
+  const text = document.getElementById('toastText');
+  if (text) text.textContent = message;
+  // Drop any prior undo button
+  toast.querySelectorAll('.toast-undo').forEach(b => b.remove());
+  if (typeof options.undo === 'function') {
+    const btn = document.createElement('button');
+    btn.className = 'toast-undo';
+    btn.textContent = 'Undo';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { await options.undo(); } catch { }
+      toast.classList.remove('visible');
+    });
+    toast.appendChild(btn);
+  }
   toast.classList.add('visible');
-  setTimeout(() => toast.classList.remove('visible'), 2500);
+  if (toastTimer) clearTimeout(toastTimer);
+  const duration = options.duration || (options.undo ? 5000 : 2500);
+  toastTimer = setTimeout(() => {
+    toast.classList.remove('visible');
+    toast.querySelectorAll('.toast-undo').forEach(b => b.remove());
+  }, duration);
 }
 
 /**
@@ -1512,9 +1537,9 @@ async function confirmSweep() {
   const selected = getSweepSelectedTabs();
   if (selected.length === 0) return;
   closeSweepModal();
-  // Step 1: defer them so they're recoverable from Saved for Later
+  let deferredIds = [];
   try {
-    await fetch('/api/defer', {
+    const resp = await fetch('/api/defer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1525,13 +1550,28 @@ async function confirmSweep() {
         })),
       }),
     });
-  } catch { /* if defer fails, still close — safer than a half-state */ }
-
-  // Step 2: close the tabs by exact URL (avoid wiping fresh tabs on the same domain)
+    if (resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      if (Array.isArray(data.deferred)) deferredIds = data.deferred.map(d => d.id);
+    }
+  } catch { }
   const urls = selected.map(t => t.url).filter(Boolean);
   await sendToExtension('closeTabs', { urls, exact: true });
   playCloseSound();
-  showToast(`Swept ${selected.length} stale tab${selected.length !== 1 ? 's' : ''}`);
+  showToast(`Swept ${selected.length} stale tab${selected.length !== 1 ? 's' : ''}`, {
+    undo: async () => {
+      await sendToExtension('openTabs', { urls });
+      await Promise.all(deferredIds.map(id =>
+        fetch(`/api/deferred/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dismissed: true }),
+        }).catch(() => null)
+      ));
+      showToast(`Restored ${selected.length} tab${selected.length !== 1 ? 's' : ''}`);
+      setTimeout(() => refreshDynamicContent(), 200);
+    },
+  });
   setTimeout(() => refreshDynamicContent(), 300);
 }
 
@@ -1568,27 +1608,41 @@ async function sweepDomain(domainId) {
   // Find the matching group by reversing the stableId encoding from renderDomainCard
   const group = domainGroups.find(g => 'domain-' + g.domain.replace(/[^a-z0-9]/g, '-') === domainId);
   if (!group || !group.tabs || group.tabs.length === 0) return;
-  const tabs = group.tabs;
-  if (!confirm(`Save ${tabs.length} ${group.domain === '__landing-pages__' ? 'homepage' : group.domain} tab${tabs.length !== 1 ? 's' : ''} to Saved for Later, then close?`)) {
-    return;
-  }
+  const tabs = group.tabs.map(t => ({ url: t.url, title: t.title || t.url, favIconUrl: t.favIconUrl || null }));
+
+  // Defer first so they're recoverable even if Undo is missed
+  let deferredIds = [];
   try {
-    await fetch('/api/defer', {
+    const resp = await fetch('/api/defer', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        tabs: tabs.map(t => ({
-          url: t.url,
-          title: t.title || t.url,
-          favicon_url: t.favIconUrl || null,
-        })),
+        tabs: tabs.map(t => ({ url: t.url, title: t.title, favicon_url: t.favIconUrl })),
       }),
     });
-  } catch { /* still close — better than half-state */ }
+    if (resp.ok) {
+      const data = await resp.json().catch(() => ({}));
+      if (Array.isArray(data.deferred)) deferredIds = data.deferred.map(d => d.id);
+    }
+  } catch { }
   const urls = tabs.map(t => t.url).filter(Boolean);
   await sendToExtension('closeTabs', { urls, exact: true });
   playCloseSound();
-  showToast(`Swept ${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`);
+  showToast(`Swept ${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`, {
+    undo: async () => {
+      // Reopen the URLs and dismiss the deferred records we just created
+      await sendToExtension('openTabs', { urls });
+      await Promise.all(deferredIds.map(id =>
+        fetch(`/api/deferred/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dismissed: true }),
+        }).catch(() => null)
+      ));
+      showToast(`Restored ${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`);
+      setTimeout(() => refreshDynamicContent(), 200);
+    },
+  });
   setTimeout(() => refreshDynamicContent(), 300);
 }
 
@@ -1624,7 +1678,7 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}) {
     const faviconUrl = getTabFavicon(tab);
     const ageLabel = formatTabAge(tab);
     const ageHtml = ageLabel ? `<span class="chip-age">${ageLabel}</span>` : '';
-    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
+    return `<div class="page-chip clickable${chipClass}" draggable="true" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
       ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
       <span class="chip-text">${label}</span>${dupeTag}${ageHtml}
       <div class="chip-actions">
@@ -1719,7 +1773,7 @@ function renderDomainCard(group, groupIndex) {
     const faviconUrl = getTabFavicon(tab);
     const ageLabel = formatTabAge(tab);
     const ageHtml = ageLabel ? `<span class="chip-age">${ageLabel}</span>` : '';
-    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
+    return `<div class="page-chip clickable${chipClass}" draggable="true" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
       ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
       <span class="chip-text">${label}</span>${dupeTag}${ageHtml}
       <div class="chip-actions">
@@ -1766,11 +1820,14 @@ function renderDomainCard(group, groupIndex) {
       </button>`;
   }
 
+  const collapsed = isCardCollapsed(stableId);
+  const collapsedClass = collapsed ? ' card-collapsed' : '';
   return `
-    <div class="mission-card domain-card ${hasDupes ? 'has-amber-bar' : 'has-neutral-bar'}" data-domain-id="${stableId}">
+    <div class="mission-card domain-card${collapsedClass} ${hasDupes ? 'has-amber-bar' : 'has-neutral-bar'}" data-domain-id="${stableId}">
       <div class="status-bar"${statusBarStyle}></div>
       <div class="mission-content">
-        <div class="mission-top">
+        <div class="mission-top" data-action="toggle-card" data-domain-id="${stableId}" title="Click to collapse / expand">
+          <svg class="card-chevron" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
           <span class="mission-name">${isLanding ? 'Homepages' : friendlyDomain(group.domain)}</span>
           ${tabBadge}
           ${dupeBadge}
@@ -1783,6 +1840,22 @@ function renderDomainCard(group, groupIndex) {
         <div class="mission-page-label">tabs</div>
       </div>
     </div>`;
+}
+
+// Per-domain collapse state, persisted in localStorage
+function getCollapsedSet() {
+  try {
+    const raw = localStorage.getItem('tabout-collapsed-cards') || '[]';
+    return new Set(JSON.parse(raw));
+  } catch { return new Set(); }
+}
+function isCardCollapsed(stableId) { return getCollapsedSet().has(stableId); }
+function toggleCardCollapsed(stableId) {
+  const set = getCollapsedSet();
+  if (set.has(stableId)) set.delete(stableId); else set.add(stableId);
+  localStorage.setItem('tabout-collapsed-cards', JSON.stringify([...set]));
+  const card = document.querySelector(`.mission-card[data-domain-id="${stableId}"]`);
+  if (card) card.classList.toggle('card-collapsed', set.has(stableId));
 }
 
 
@@ -2049,6 +2122,16 @@ async function renderStaticDashboard() {
 
   // --- Tab activity heatmap ---
   initHeatmap();
+
+  // --- UX upgrades: snooze/note popovers, shortcut sheet, settings search,
+  //     context menu, multi-select, drag-to-session ---
+  initSnoozePopover();
+  initNotePopover();
+  initShortcutSheet();
+  initSettingsSearch();
+  initChipContextMenu();
+  initMultiSelect();
+  initChipDragToSession();
 
   // ── Fetch tabs + render dynamic content ────────────────────────────────
   await refreshDynamicContent();
@@ -2352,6 +2435,10 @@ document.addEventListener('click', async (e) => {
     await sweepDomain(actionEl.dataset.domainId);
     return;
   }
+  if (action === 'toggle-card') {
+    toggleCardCollapsed(actionEl.dataset.domainId);
+    return;
+  }
   if (action === 'edit-note') {
     await editTabNote(actionEl.dataset.tabUrl);
     return;
@@ -2482,6 +2569,13 @@ document.addEventListener('click', async (e) => {
     await sendToExtension('closeTabs', { urls: [tabUrl] });
     playCloseSound();
     await fetchOpenTabs();
+    showToast(`Closed "${chipTitle}"`, {
+      undo: async () => {
+        await sendToExtension('openTabs', { urls: [tabUrl] });
+        showToast('Tab restored');
+        setTimeout(() => refreshDynamicContent(), 200);
+      },
+    });
 
     // Remove the chip from the DOM with confetti
     if (chip) {
@@ -3111,28 +3205,377 @@ async function fetchTabNotes() {
   } catch { /* leave previous map */ }
 }
 
-async function editTabNote(url) {
+// Open the inline note editor popover for a given URL
+let noteContextUrl = null;
+function editTabNote(url) {
   if (!url) return;
+  noteContextUrl = url;
+  const overlay = document.getElementById('noteOverlay');
+  const ta = document.getElementById('noteTextarea');
+  const tabLine = document.getElementById('noteTabLine');
+  const deleteBtn = document.getElementById('noteDeleteBtn');
+  if (!overlay || !ta) return;
+
+  // Show the tab title/host as context
+  const tab = (openTabs || []).find(t => t.url === url);
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { }
+  if (tabLine) {
+    tabLine.innerHTML = `<span class="note-tab-host">${host}</span> · <span class="note-tab-title">${(tab?.title || url).replace(/</g, '&lt;')}</span>`;
+  }
+
   const existing = tabNotes[url] ? tabNotes[url].note : '';
-  const next = prompt('Note for this tab (clear to remove):', existing);
-  if (next === null) return; // cancelled
+  ta.value = existing;
+  if (deleteBtn) deleteBtn.style.display = existing ? '' : 'none';
+
+  overlay.style.display = 'flex';
+  requestAnimationFrame(() => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); });
+}
+
+function closeNotePopover() {
+  const overlay = document.getElementById('noteOverlay');
+  if (overlay) overlay.style.display = 'none';
+  noteContextUrl = null;
+}
+
+async function saveNote(note) {
+  if (!noteContextUrl) return;
+  const url = noteContextUrl;
   try {
     await fetch('/api/notes', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, note: next }),
+      body: JSON.stringify({ url, note }),
     });
-    if (next.trim() === '') {
+    if (note.trim() === '') {
       delete tabNotes[url];
       showToast('Note removed');
     } else {
-      tabNotes[url] = { note: next, updated_at: new Date().toISOString() };
+      tabNotes[url] = { note, updated_at: new Date().toISOString() };
       showToast('Note saved');
     }
+    closeNotePopover();
     refreshDynamicContent();
-  } catch {
-    showToast('Failed to save note');
+  } catch { showToast('Failed to save note'); }
+}
+
+// Multi-select chips for batch actions. Click while holding shift toggles
+// a chip into a "selected" set; a floating bar appears at the bottom of the
+// viewport with batch Save / Close / Snooze / Clear.
+const chipSelection = new Set();
+
+function clearChipSelection() {
+  chipSelection.clear();
+  document.querySelectorAll('.page-chip.chip-selected').forEach(el => el.classList.remove('chip-selected'));
+  updateBatchBar();
+}
+
+function toggleChipSelection(url, chipEl) {
+  if (chipSelection.has(url)) {
+    chipSelection.delete(url);
+    chipEl.classList.remove('chip-selected');
+  } else {
+    chipSelection.add(url);
+    chipEl.classList.add('chip-selected');
   }
+  updateBatchBar();
+}
+
+function updateBatchBar() {
+  let bar = document.getElementById('batchBar');
+  const n = chipSelection.size;
+  if (n === 0) {
+    if (bar) bar.style.display = 'none';
+    return;
+  }
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'batchBar';
+    bar.className = 'batch-bar';
+    bar.innerHTML = `
+      <span class="batch-count" id="batchCount"></span>
+      <div class="batch-actions">
+        <button class="batch-btn" data-batch-act="save">Save all</button>
+        <button class="batch-btn" data-batch-act="snooze">Snooze all</button>
+        <button class="batch-btn batch-btn-danger" data-batch-act="close">Close all</button>
+        <button class="batch-btn" data-batch-act="clear">Clear</button>
+      </div>`;
+    document.body.appendChild(bar);
+    bar.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-batch-act]');
+      if (!btn) return;
+      const act = btn.dataset.batchAct;
+      const urls = [...chipSelection];
+      if (act === 'clear') { clearChipSelection(); return; }
+      if (act === 'save') {
+        const tabs = urls.map(u => {
+          const t = (openTabs || []).find(x => x.url === u);
+          return { url: u, title: t?.title || u, favicon_url: t?.favIconUrl || null };
+        });
+        await fetch('/api/defer', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tabs }),
+        }).catch(() => null);
+        await sendToExtension('closeTabs', { urls, exact: true });
+        playCloseSound();
+        showToast(`Saved ${urls.length} tabs`, {
+          undo: async () => {
+            await sendToExtension('openTabs', { urls });
+            setTimeout(() => refreshDynamicContent(), 200);
+          },
+        });
+        clearChipSelection();
+        setTimeout(() => refreshDynamicContent(), 200);
+      } else if (act === 'close') {
+        await sendToExtension('closeTabs', { urls, exact: true });
+        playCloseSound();
+        showToast(`Closed ${urls.length} tabs`, {
+          undo: async () => {
+            await sendToExtension('openTabs', { urls });
+            setTimeout(() => refreshDynamicContent(), 200);
+          },
+        });
+        clearChipSelection();
+        setTimeout(() => refreshDynamicContent(), 200);
+      } else if (act === 'snooze') {
+        // Snooze all to the same time using the popover with the first URL
+        // and then iterate. Simpler: use a default of "tomorrow 9am" and
+        // skip the popover for batch.
+        const wakeAt = parseSnoozeChoice('tomorrow 9am');
+        for (const u of urls) {
+          const t = (openTabs || []).find(x => x.url === u);
+          await fetch('/api/snoozes', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url: u,
+              title: t?.title || u,
+              favicon_url: t?.favIconUrl || null,
+              wake_at: wakeAt,
+            }),
+          }).catch(() => null);
+        }
+        await sendToExtension('closeTabs', { urls, exact: true });
+        playCloseSound();
+        showToast(`Snoozed ${urls.length} tabs until tomorrow 9am`);
+        clearChipSelection();
+        setTimeout(() => refreshDynamicContent(), 200);
+      }
+    });
+  }
+  bar.style.display = 'flex';
+  document.getElementById('batchCount').textContent = `${n} tab${n !== 1 ? 's' : ''} selected`;
+}
+
+function initMultiSelect() {
+  document.addEventListener('click', (e) => {
+    if (!e.shiftKey) return;
+    const chip = e.target.closest('.page-chip[data-tab-url]');
+    if (!chip) return;
+    // Don't trigger when clicking inside chip-actions buttons
+    if (e.target.closest('.chip-actions')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleChipSelection(chip.dataset.tabUrl, chip);
+  }, true);
+}
+
+// Right-click context menu on chips. Provides Save / Snooze / Note /
+// Copy URL / Close in one place — useful when chip-action icons are crowded.
+// HTML5 drag-and-drop: drag a chip onto a session row to add the tab to
+// that session. The chip carries its URL+title via the dataTransfer payload.
+function initChipDragToSession() {
+  document.addEventListener('dragstart', (e) => {
+    const chip = e.target.closest('.page-chip[draggable="true"]');
+    if (!chip) return;
+    const url = chip.dataset.tabUrl;
+    const title = chip.querySelector('.chip-text')?.textContent || url;
+    if (!url) return;
+    e.dataTransfer.setData('application/tabout-url', url);
+    e.dataTransfer.setData('application/tabout-title', title);
+    e.dataTransfer.effectAllowed = 'copy';
+    chip.classList.add('chip-dragging');
+  });
+  document.addEventListener('dragend', (e) => {
+    const chip = e.target.closest('.page-chip');
+    if (chip) chip.classList.remove('chip-dragging');
+  });
+
+  // Delegate dragover / drop to the sessions list
+  const list = document.getElementById('sessionsList');
+  if (!list) return;
+  list.addEventListener('dragover', (e) => {
+    const row = e.target.closest('.session-row');
+    if (!row) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    row.classList.add('session-row-drop-target');
+  });
+  list.addEventListener('dragleave', (e) => {
+    const row = e.target.closest('.session-row');
+    if (row) row.classList.remove('session-row-drop-target');
+  });
+  list.addEventListener('drop', async (e) => {
+    const row = e.target.closest('.session-row');
+    if (!row) return;
+    e.preventDefault();
+    row.classList.remove('session-row-drop-target');
+    const url = e.dataTransfer.getData('application/tabout-url');
+    const title = e.dataTransfer.getData('application/tabout-title');
+    const sessionId = row.dataset.sessionId;
+    if (!url || !sessionId) return;
+    const tab = (openTabs || []).find(t => t.url === url);
+    try {
+      const resp = await fetch(`/api/sessions/${sessionId}/tabs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tab: { url, title, favIconUrl: tab?.favIconUrl || null },
+        }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (data.added === false) {
+        showToast('Tab already in this session');
+      } else {
+        const sessionName = savedSessions.find(s => s.id === Number(sessionId))?.name || 'session';
+        showToast(`Added to "${sessionName}"`);
+      }
+      await fetchSessions();
+      renderSessions();
+    } catch { showToast('Failed to add tab'); }
+  });
+}
+
+function initSettingsSearch() {
+  const input = document.getElementById('settingsSearch');
+  if (!input) return;
+  const apply = () => {
+    const q = input.value.trim().toLowerCase();
+    document.querySelectorAll('.settings-group').forEach(group => {
+      if (!q) { group.style.display = ''; return; }
+      const text = group.textContent.toLowerCase();
+      group.style.display = text.includes(q) ? '' : 'none';
+    });
+    // Hide the save button when filtering — it's a global save and confusing
+    const save = document.getElementById('settingsSave');
+    if (save) save.style.display = q ? 'none' : '';
+  };
+  input.addEventListener('input', apply);
+  // Reset on each settings open
+  document.getElementById('settingsToggle')?.addEventListener('click', () => {
+    setTimeout(() => { input.value = ''; apply(); }, 0);
+  });
+}
+
+function initShortcutSheet() {
+  const overlay = document.getElementById('shortcutsOverlay');
+  const close = document.getElementById('shortcutsCloseBtn');
+  if (!overlay) return;
+  const open = () => { overlay.style.display = 'flex'; };
+  const closeFn = () => { overlay.style.display = 'none'; };
+  if (close) close.addEventListener('click', closeFn);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeFn(); });
+  document.addEventListener('keydown', (e) => {
+    // ? toggles the sheet, but only when the user isn't typing
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+      e.preventDefault();
+      if (overlay.style.display === 'flex') closeFn(); else open();
+    }
+    if (e.key === 'Escape' && overlay.style.display === 'flex') closeFn();
+  });
+}
+
+function initChipContextMenu() {
+  const menu = document.getElementById('contextMenu');
+  if (!menu) return;
+  document.addEventListener('contextmenu', (e) => {
+    const chip = e.target.closest('.page-chip[data-tab-url]');
+    if (!chip) return;
+    e.preventDefault();
+    const url = chip.dataset.tabUrl;
+    const title = chip.querySelector('.chip-text')?.textContent || url;
+    const hasNote = !!tabNotes[url];
+    menu.innerHTML = `
+      <div class="context-menu-item" data-context-act="save" data-url="${url.replace(/"/g, '&quot;')}" data-title="${title.replace(/"/g, '&quot;')}">Save for later</div>
+      <div class="context-menu-item" data-context-act="snooze" data-url="${url.replace(/"/g, '&quot;')}" data-title="${title.replace(/"/g, '&quot;')}">Snooze…</div>
+      <div class="context-menu-item" data-context-act="note" data-url="${url.replace(/"/g, '&quot;')}">${hasNote ? 'Edit note' : 'Add note'}</div>
+      <div class="context-menu-item" data-context-act="copy" data-url="${url.replace(/"/g, '&quot;')}">Copy URL</div>
+      <div class="context-menu-divider"></div>
+      <div class="context-menu-item context-menu-item-danger" data-context-act="close" data-url="${url.replace(/"/g, '&quot;')}">Close tab</div>
+    `;
+    // Position the menu near the cursor, clamped to viewport
+    const x = Math.min(e.clientX, window.innerWidth - 220);
+    const y = Math.min(e.clientY, window.innerHeight - 240);
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+    menu.style.display = 'block';
+  });
+  // Hide on any click outside
+  document.addEventListener('click', (e) => {
+    if (menu.style.display === 'none') return;
+    if (e.target.closest('.context-menu')) return;
+    menu.style.display = 'none';
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') menu.style.display = 'none';
+  });
+  menu.addEventListener('click', async (e) => {
+    const item = e.target.closest('.context-menu-item');
+    if (!item) return;
+    const act = item.dataset.contextAct;
+    const url = item.dataset.url;
+    const title = item.dataset.title;
+    menu.style.display = 'none';
+    if (act === 'save') {
+      await fetch('/api/defer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tabs: [{ url, title, favicon_url: null }] }),
+      }).catch(() => null);
+      await sendToExtension('closeTabs', { urls: [url], exact: true });
+      showToast('Saved for later');
+      setTimeout(() => refreshDynamicContent(), 200);
+    } else if (act === 'snooze') {
+      openSnoozePopover(url, title);
+    } else if (act === 'note') {
+      editTabNote(url);
+    } else if (act === 'copy') {
+      try {
+        await navigator.clipboard.writeText(url);
+        showToast('URL copied');
+      } catch { showToast('Could not copy'); }
+    } else if (act === 'close') {
+      await sendToExtension('closeTabs', { urls: [url], exact: true });
+      playCloseSound();
+      showToast(`Closed "${title}"`, {
+        undo: async () => {
+          await sendToExtension('openTabs', { urls: [url] });
+          setTimeout(() => refreshDynamicContent(), 200);
+        },
+      });
+      setTimeout(() => refreshDynamicContent(), 200);
+    }
+  });
+}
+
+function initNotePopover() {
+  const overlay = document.getElementById('noteOverlay');
+  if (!overlay) return;
+  document.getElementById('noteCloseBtn')?.addEventListener('click', closeNotePopover);
+  document.getElementById('noteCancelBtn')?.addEventListener('click', closeNotePopover);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeNotePopover(); });
+  document.getElementById('noteSaveBtn')?.addEventListener('click', () => {
+    const ta = document.getElementById('noteTextarea');
+    saveNote(ta.value || '');
+  });
+  document.getElementById('noteDeleteBtn')?.addEventListener('click', () => saveNote(''));
+  document.getElementById('noteTextarea')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      saveNote(e.target.value || '');
+    }
+  });
 }
 
 async function fetchSnoozes() {
@@ -3197,15 +3640,41 @@ function applyTimeOfDay(date, t) {
   date.setHours(9, 0, 0, 0);
 }
 
-async function snoozeTab(url, title) {
+// Open the snooze popover for a given URL. Quick-pick buttons or a custom
+// natural-language string both produce an ISO wake_at and submit the same way.
+let snoozeContext = { url: null, title: null };
+function openSnoozePopover(url, title) {
   if (!url) return;
-  const choice = prompt('Snooze until? (e.g. 1h, 3h, tomorrow, tomorrow 9am, monday, friday 5pm)', 'tomorrow 9am');
-  if (!choice) return;
-  const wakeAt = parseSnoozeChoice(choice);
-  if (!wakeAt) {
-    showToast('Could not parse time');
-    return;
-  }
+  snoozeContext = { url, title: title || '' };
+  const overlay = document.getElementById('snoozeOverlay');
+  const titleEl = document.getElementById('snoozeTitle');
+  if (titleEl) titleEl.textContent = title ? `Snooze "${title.length > 40 ? title.slice(0, 40) + '…' : title}"` : 'Snooze tab';
+
+  // Update relative-time hints on the quick-pick buttons
+  const now = new Date();
+  const fmt = (d) => d.toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  const in1h = new Date(now.getTime() + 3600 * 1000);
+  const in3h = new Date(now.getTime() + 3 * 3600 * 1000);
+  const sat = new Date(now); sat.setDate(sat.getDate() + ((6 - sat.getDay() + 7) % 7 || 7)); sat.setHours(9, 0, 0, 0);
+  const setHint = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+  setHint('snoozeHint1h', fmt(in1h));
+  setHint('snoozeHint3h', fmt(in3h));
+  setHint('snoozeHintWeekend', fmt(sat));
+
+  document.getElementById('snoozeCustomInput').value = '';
+  if (overlay) overlay.style.display = 'flex';
+}
+
+function closeSnoozePopover() {
+  const overlay = document.getElementById('snoozeOverlay');
+  if (overlay) overlay.style.display = 'none';
+  snoozeContext = { url: null, title: null };
+}
+
+async function commitSnooze(wakeAt) {
+  if (!snoozeContext.url || !wakeAt) return;
+  const url = snoozeContext.url;
+  const title = snoozeContext.title;
   const tab = (openTabs || []).find(t => t.url === url);
   try {
     await fetch('/api/snoozes', {
@@ -3220,12 +3689,67 @@ async function snoozeTab(url, title) {
     });
     await sendToExtension('closeTabs', { urls: [url], exact: true });
     playCloseSound();
+    closeSnoozePopover();
     const when = new Date(wakeAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     showToast(`Snoozed until ${when}`);
     setTimeout(() => refreshDynamicContent(), 300);
   } catch {
     showToast('Failed to snooze');
   }
+}
+
+function resolveSnoozeChoice(choice) {
+  // Map the quick-pick keys to the existing parser format
+  const map = {
+    '1h': '1h',
+    '3h': '3h',
+    'tonight': null, // computed manually
+    'tomorrow': 'tomorrow 9am',
+    'monday': 'monday 9am',
+    'weekend': null, // computed manually
+  };
+  if (choice === 'tonight') {
+    const d = new Date();
+    d.setHours(18, 0, 0, 0);
+    if (d.getTime() <= Date.now()) d.setDate(d.getDate() + 1);
+    return d.toISOString();
+  }
+  if (choice === 'weekend') {
+    const d = new Date();
+    const days = (6 - d.getDay() + 7) % 7 || 7;
+    d.setDate(d.getDate() + days);
+    d.setHours(9, 0, 0, 0);
+    return d.toISOString();
+  }
+  if (map[choice]) return parseSnoozeChoice(map[choice]);
+  return parseSnoozeChoice(choice);
+}
+
+function initSnoozePopover() {
+  const overlay = document.getElementById('snoozeOverlay');
+  if (!overlay) return;
+  document.getElementById('snoozeCloseBtn')?.addEventListener('click', closeSnoozePopover);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeSnoozePopover(); });
+  document.querySelectorAll('.snooze-quick').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const wakeAt = resolveSnoozeChoice(btn.dataset.snoozeChoice);
+      if (wakeAt) commitSnooze(wakeAt);
+    });
+  });
+  const customBtn = document.getElementById('snoozeCustomBtn');
+  const customIn = document.getElementById('snoozeCustomInput');
+  const submitCustom = () => {
+    const wakeAt = parseSnoozeChoice(customIn.value);
+    if (!wakeAt) { showToast("Couldn't parse that time"); return; }
+    commitSnooze(wakeAt);
+  };
+  customBtn?.addEventListener('click', submitCustom);
+  customIn?.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitCustom(); });
+}
+
+// Public entry — backwards compatible with prior callers
+function snoozeTab(url, title) {
+  openSnoozePopover(url, title);
 }
 
 async function unsnoozeNow(id) {
@@ -3743,7 +4267,9 @@ async function switchToSession(id) {
 }
 
 async function deleteSession(id) {
-  if (!confirm('Delete this session?')) return;
+  // Snapshot the session so we can recreate it on undo
+  const snapshot = savedSessions.find(s => s.id === Number(id));
+  if (!snapshot) return;
   try {
     const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
     if (!res.ok) {
@@ -3752,7 +4278,24 @@ async function deleteSession(id) {
     }
     await fetchSessions();
     renderSessions();
-    showToast('Session deleted');
+    showToast(`Deleted "${snapshot.name}"`, {
+      undo: async () => {
+        try {
+          await fetch('/api/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              name: snapshot.name,
+              workspace: snapshot.workspace || 'Default',
+              tabs: snapshot.tabs || [],
+            }),
+          });
+          await fetchSessions();
+          renderSessions();
+          showToast('Session restored');
+        } catch { showToast('Failed to restore'); }
+      },
+    });
   } catch {
     showToast('Failed to delete session');
   }

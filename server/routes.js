@@ -42,6 +42,7 @@ const {
   getSession,
   deleteSession,
   updateSessionWorkspace,
+  updateSessionUrls,
   upsertNote,
   deleteNote,
   getAllNotes,
@@ -442,6 +443,32 @@ router.patch('/sessions/:id', (req, res) => {
   } catch (err) {
     console.error('[routes] PATCH /sessions/:id failed:', err.message);
     res.status(500).json({ error: 'Failed to update session' });
+  }
+});
+
+router.post('/sessions/:id/tabs', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid ID' });
+    const newTab = req.body && req.body.tab;
+    if (!newTab || !newTab.url) return res.status(400).json({ error: 'tab.url required' });
+    const row = getSession.get({ id });
+    if (!row) return res.status(404).json({ error: 'Session not found' });
+    const existing = safeParseTabs(row.urls_json);
+    // Skip if URL already in this session
+    if (existing.some(t => t.url === newTab.url)) {
+      return res.json({ session: { id, name: row.name, tabs: existing }, added: false });
+    }
+    existing.push({
+      url: newTab.url,
+      title: newTab.title || '',
+      favIconUrl: newTab.favIconUrl || null,
+    });
+    updateSessionUrls.run({ id, urls_json: JSON.stringify(existing) });
+    res.json({ session: { id, name: row.name, tabs: existing }, added: true });
+  } catch (err) {
+    console.error('[routes] POST /sessions/:id/tabs failed:', err.message);
+    res.status(500).json({ error: 'Failed to add tab to session' });
   }
 });
 

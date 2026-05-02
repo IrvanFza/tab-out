@@ -456,6 +456,10 @@ const updateSessionWorkspace = db.prepare(`
   UPDATE sessions SET workspace = :workspace WHERE id = :id
 `);
 
+const updateSessionUrls = db.prepare(`
+  UPDATE sessions SET urls_json = :urls_json WHERE id = :id
+`);
+
 // ── TAB NOTES ──────────────────────────────────────────────────────────────
 
 const upsertNote = db.prepare(`
@@ -587,6 +591,7 @@ module.exports = {
   getSession,       // ({ id }) → single session row or undefined
   deleteSession,    // ({ id }) → deletes a session
   updateSessionWorkspace, // ({ id, workspace })
+  updateSessionUrls,      // ({ id, urls_json })
   upsertNote,       // ({ url, note })
   deleteNote,       // ({ url })
   getAllNotes,      // () → all notes
