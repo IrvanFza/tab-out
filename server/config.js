@@ -26,6 +26,7 @@ const DEFAULTS = {
   useDynamicQuote: false,
   searchEngine: "google",
   quickLinks: [],
+  staleWhitelist: [],
 };
 
 const VALID_SEARCH_ENGINES = ["google", "bing", "duckduckgo", "brave", "ecosia"];

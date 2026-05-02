@@ -74,6 +74,7 @@ let appConfig = {
   useDynamicQuote: false,
   searchEngine: 'google',
   quickLinks: [],
+  staleWhitelist: [],
 };
 
 const SEARCH_ENGINES = {
@@ -1282,17 +1283,80 @@ function checkTabOutDupes() {
    and renders a card per domain.
    ---------------------------------------------------------------- */
 
+// Live inline filter for the open-tabs grid. Matches against visible chip
+// text + tab URL + domain name. Doesn't reveal chips hidden inside the
+// overflow ("+N more") section — those become visible when the user expands.
+let openTabsFilterQuery = '';
+function applyOpenTabsFilter() {
+  const q = openTabsFilterQuery.trim().toLowerCase();
+  document.querySelectorAll('.mission-card.domain-card').forEach(card => {
+    const name = (card.querySelector('.mission-name')?.textContent || '').toLowerCase();
+    const domainMatch = !q || name.includes(q);
+    let chipMatchCount = 0;
+    card.querySelectorAll('.page-chip[data-tab-url]').forEach(chip => {
+      // Skip chips inside the collapsed overflow — keep their inline display
+      if (chip.closest('.page-chips-overflow')) return;
+      const haystack = (chip.textContent + ' ' + (chip.dataset.tabUrl || '')).toLowerCase();
+      const matches = !q || domainMatch || haystack.includes(q);
+      chip.style.display = matches ? '' : 'none';
+      if (matches) chipMatchCount += 1;
+    });
+    card.style.display = (domainMatch || chipMatchCount > 0) ? '' : 'none';
+  });
+}
+
+function initOpenTabsFilter() {
+  const input = document.getElementById('openTabsFilter');
+  if (!input) return;
+  input.addEventListener('input', () => {
+    openTabsFilterQuery = input.value;
+    applyOpenTabsFilter();
+  });
+  // Cmd+/ focuses the filter
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === '/') {
+      e.preventDefault();
+      input.focus();
+      input.select();
+    }
+  });
+}
+
 // A tab is "stale" if Chrome reports it hasn't been visited in 7+ days.
 // chrome.tabs.Tab.lastAccessed is unix-ms, available in Chrome 121+. When the
 // field is null/missing we treat the tab as fresh — never falsely flag.
 const STALE_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
 function isStaleTab(tab) {
   if (!tab || typeof tab.lastAccessed !== 'number') return false;
-  return Date.now() - tab.lastAccessed > STALE_THRESHOLD_MS;
+  if (Date.now() - tab.lastAccessed <= STALE_THRESHOLD_MS) return false;
+  // Honor the whitelist — domains the user explicitly never wants flagged
+  // (Gmail, Slack, Calendar) so the sweep doesn't nag about always-on tabs.
+  const whitelist = appConfig.staleWhitelist || [];
+  if (whitelist.length === 0) return true;
+  try {
+    const host = new URL(tab.url).hostname.toLowerCase();
+    return !whitelist.some(entry => {
+      const e = (entry || '').toLowerCase().trim();
+      if (!e) return false;
+      return host === e || host.endsWith('.' + e);
+    });
+  } catch { return true; }
 }
 
 function getStaleTabs() {
   return getRealTabs().filter(isStaleTab);
+}
+
+// Compact relative-age string for chip labels — "1h", "3d", "2mo".
+// Returns '' when chrome.tabs.lastAccessed isn't available (older Chrome).
+function formatTabAge(tab) {
+  if (!tab || typeof tab.lastAccessed !== 'number') return '';
+  const ms = Date.now() - tab.lastAccessed;
+  if (ms < 60 * 1000) return 'now';
+  if (ms < 60 * 60 * 1000) return Math.floor(ms / (60 * 1000)) + 'm';
+  if (ms < 24 * 60 * 60 * 1000) return Math.floor(ms / (60 * 60 * 1000)) + 'h';
+  if (ms < 30 * 24 * 60 * 60 * 1000) return Math.floor(ms / (24 * 60 * 60 * 1000)) + 'd';
+  return Math.floor(ms / (30 * 24 * 60 * 60 * 1000)) + 'mo';
 }
 
 function formatStaleAge(ms) {
@@ -1421,6 +1485,34 @@ function initSweepModal() {
   });
 }
 
+async function sweepDomain(domainId) {
+  // Find the matching group by reversing the stableId encoding from renderDomainCard
+  const group = domainGroups.find(g => 'domain-' + g.domain.replace(/[^a-z0-9]/g, '-') === domainId);
+  if (!group || !group.tabs || group.tabs.length === 0) return;
+  const tabs = group.tabs;
+  if (!confirm(`Save ${tabs.length} ${group.domain === '__landing-pages__' ? 'homepage' : group.domain} tab${tabs.length !== 1 ? 's' : ''} to Saved for Later, then close?`)) {
+    return;
+  }
+  try {
+    await fetch('/api/defer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        tabs: tabs.map(t => ({
+          url: t.url,
+          title: t.title || t.url,
+          favicon_url: t.favIconUrl || null,
+        })),
+      }),
+    });
+  } catch { /* still close — better than half-state */ }
+  const urls = tabs.map(t => t.url).filter(Boolean);
+  await sendToExtension('closeTabs', { urls, exact: true });
+  playCloseSound();
+  showToast(`Swept ${tabs.length} tab${tabs.length !== 1 ? 's' : ''}`);
+  setTimeout(() => refreshDynamicContent(), 300);
+}
+
 function updateSweepStaleButton() {
   const btn = document.getElementById('sweepStaleBtn');
   const label = document.getElementById('sweepStaleLabel');
@@ -1451,10 +1543,18 @@ function buildOverflowChips(hiddenTabs, urlCounts = {}) {
     const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
     const safeTitle = label.replace(/"/g, '&quot;');
     const faviconUrl = getTabFavicon(tab);
+    const ageLabel = formatTabAge(tab);
+    const ageHtml = ageLabel ? `<span class="chip-age">${ageLabel}</span>` : '';
     return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
       ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
-      <span class="chip-text">${label}</span>${dupeTag}
+      <span class="chip-text">${label}</span>${dupeTag}${ageHtml}
       <div class="chip-actions">
+        <button class="chip-action chip-note${tabNotes[tab.url] ? ' chip-note-active' : ''}" data-action="edit-note" data-tab-url="${safeUrl}" title="${tabNotes[tab.url] ? 'Edit note' : 'Add a note'}">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487zM19.5 7.125l-3-3"/></svg>
+        </button>
+        <button class="chip-action chip-snooze" data-action="snooze-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Snooze">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M9 9h6l-6 6h6"/></svg>
+        </button>
         <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
@@ -1538,10 +1638,18 @@ function renderDomainCard(group, groupIndex) {
     const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
     const safeTitle = label.replace(/"/g, '&quot;');
     const faviconUrl = getTabFavicon(tab);
+    const ageLabel = formatTabAge(tab);
+    const ageHtml = ageLabel ? `<span class="chip-age">${ageLabel}</span>` : '';
     return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
       ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
-      <span class="chip-text">${label}</span>${dupeTag}
+      <span class="chip-text">${label}</span>${dupeTag}${ageHtml}
       <div class="chip-actions">
+        <button class="chip-action chip-note${tabNotes[tab.url] ? ' chip-note-active' : ''}" data-action="edit-note" data-tab-url="${safeUrl}" title="${tabNotes[tab.url] ? 'Edit note' : 'Add a note'}">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487zM19.5 7.125l-3-3"/></svg>
+        </button>
+        <button class="chip-action chip-snooze" data-action="snooze-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Snooze">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><circle cx="12" cy="12" r="9"/><path d="M9 9h6l-6 6h6"/></svg>
+        </button>
         <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
         </button>
@@ -1561,6 +1669,9 @@ function renderDomainCard(group, groupIndex) {
     <button class="action-btn close-tabs" data-action="close-domain-tabs" data-domain-id="${stableId}">
       ${ICONS.close}
       Close all ${tabCount} tab${tabCount !== 1 ? 's' : ''}
+    </button>
+    <button class="action-btn" data-action="sweep-domain" data-domain-id="${stableId}" title="Save all to Saved for Later, then close">
+      Sweep all (save first)
     </button>`;
 
   if (hasDupes) {
@@ -1849,6 +1960,9 @@ async function renderStaticDashboard() {
   // --- Sweep stale tabs preview modal ---
   initSweepModal();
 
+  // --- Inline filter for open tabs ---
+  initOpenTabsFilter();
+
   // ── Fetch tabs + render dynamic content ────────────────────────────────
   await refreshDynamicContent();
 }
@@ -2013,6 +2127,7 @@ async function refreshDynamicContent() {
       .map((g, idx) => renderDomainCard(g, idx))
       .join('');
     openTabsSection.style.display = 'block';
+    applyOpenTabsFilter();
   } else if (openTabsSection) {
     openTabsSection.style.display = 'none';
   }
@@ -2030,9 +2145,12 @@ async function refreshDynamicContent() {
   // ── Render recently closed tabs ─────────────────────────────────────────
   renderRecentlyClosed();
 
-  // ── Load + render saved sessions ─────────────────────────────────────────
-  await fetchSessions();
+  // ── Load notes + sessions + snoozes + yesterday stats in parallel ────────
+  await Promise.all([fetchSessions(), fetchTabNotes(), fetchSnoozes(), fetchYesterdayStats()]);
   renderSessions();
+  renderSnoozes();
+  renderYesterdaySummary();
+  renderSessionSuggestions();
 
   // ── Update Sweep Stale button visibility + count ─────────────────────────
   updateSweepStaleButton();
@@ -2114,6 +2232,78 @@ document.addEventListener('click', async (e) => {
   }
   if (action === 'sweep-stale') {
     openSweepModal();
+    return;
+  }
+  if (action === 'sweep-domain') {
+    await sweepDomain(actionEl.dataset.domainId);
+    return;
+  }
+  if (action === 'edit-note') {
+    await editTabNote(actionEl.dataset.tabUrl);
+    return;
+  }
+  if (action === 'snooze-tab') {
+    await snoozeTab(actionEl.dataset.tabUrl, actionEl.dataset.tabTitle);
+    return;
+  }
+  if (action === 'unsnooze-now') {
+    await unsnoozeNow(actionEl.dataset.snoozeId);
+    return;
+  }
+  if (action === 'cancel-snooze') {
+    await cancelSnooze(actionEl.dataset.snoozeId);
+    return;
+  }
+  if (action === 'workspace-tab') {
+    currentWorkspace = actionEl.dataset.workspace;
+    renderSessions();
+    return;
+  }
+  if (action === 'rename-workspace') {
+    await renameWorkspace(actionEl.dataset.sessionId);
+    return;
+  }
+  if (action === 'new-workspace') {
+    const name = (prompt('Workspace name:') || '').trim();
+    if (name) {
+      currentWorkspace = name.slice(0, 50);
+      renderSessions();
+    }
+    return;
+  }
+  if (action === 'suggest-save') {
+    const host = actionEl.dataset.suggestHost;
+    const tabs = getRealTabs().filter(t => {
+      try { return new URL(t.url).hostname === host; } catch { return false; }
+    });
+    if (tabs.length === 0) return;
+    const name = (prompt(`Name this ${host.replace(/^www\./, '')} session:`, host.replace(/^www\./, '')) || '').trim();
+    if (!name) return;
+    try {
+      await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          workspace: currentWorkspace,
+          tabs: tabs.map(t => ({ url: t.url, title: t.title, favIconUrl: t.favIconUrl })),
+        }),
+      });
+      await fetchSessions();
+      renderSessions();
+      const banner = document.getElementById('suggestBanner');
+      if (banner) banner.style.display = 'none';
+      showToast(`Saved "${name}"`);
+    } catch { showToast('Failed to save'); }
+    return;
+  }
+  if (action === 'suggest-dismiss') {
+    const host = actionEl.dataset.suggestHost;
+    const dismissed = new Set((sessionStorage.getItem('tabout-suggest-dismissed') || '').split(','));
+    dismissed.add(host);
+    sessionStorage.setItem('tabout-suggest-dismissed', [...dismissed].join(','));
+    const banner = document.getElementById('suggestBanner');
+    if (banner) banner.style.display = 'none';
     return;
   }
   if (action === 'restore-session') {
@@ -2650,6 +2840,10 @@ function initSettingsPanel() {
       quoteText: document.getElementById('settingQuoteText').value,
       quoteAuthor: document.getElementById('settingQuoteAuthor').value.trim(),
       searchEngine: document.getElementById('settingSearchEngine').value,
+      staleWhitelist: (document.getElementById('settingStaleWhitelist').value || '')
+        .split('\n')
+        .map(s => s.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
+        .filter(Boolean),
     };
     await saveAppConfig(updates);
     overlay.style.display = 'none';
@@ -2690,6 +2884,7 @@ function populateSettingsForm() {
 
   f('settingTheme', getStoredTheme());
   c('settingOpenInBackground', getOpenInBackground());
+  f('settingStaleWhitelist', (appConfig.staleWhitelist || []).join('\n'));
   f('settingUserName', appConfig.userName || '');
   f('settingWorkMin', appConfig.pomodoroWorkMinutes);
   f('settingBreakMin', appConfig.pomodoroBreakMinutes);
@@ -2742,6 +2937,165 @@ function renderSettingsQuickLinks() {
    ---------------------------------------------------------------- */
 
 let savedSessions = [];
+let tabNotes = {};         // { url: { note, updated_at } }
+let activeSnoozes = [];    // [{ id, url, title, wake_at }]
+let yesterdayStat = null;  // { day, tabs_opened, tabs_closed, domains }
+let currentWorkspace = 'Default';
+
+async function fetchTabNotes() {
+  try {
+    const res = await fetch('/api/notes');
+    if (!res.ok) return;
+    const data = await res.json();
+    tabNotes = data.notes || {};
+  } catch { /* leave previous map */ }
+}
+
+async function editTabNote(url) {
+  if (!url) return;
+  const existing = tabNotes[url] ? tabNotes[url].note : '';
+  const next = prompt('Note for this tab (clear to remove):', existing);
+  if (next === null) return; // cancelled
+  try {
+    await fetch('/api/notes', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, note: next }),
+    });
+    if (next.trim() === '') {
+      delete tabNotes[url];
+      showToast('Note removed');
+    } else {
+      tabNotes[url] = { note: next, updated_at: new Date().toISOString() };
+      showToast('Note saved');
+    }
+    refreshDynamicContent();
+  } catch {
+    showToast('Failed to save note');
+  }
+}
+
+async function fetchSnoozes() {
+  try {
+    const res = await fetch('/api/snoozes');
+    if (!res.ok) return;
+    const data = await res.json();
+    activeSnoozes = Array.isArray(data.snoozes) ? data.snoozes : [];
+  } catch { activeSnoozes = []; }
+}
+
+function parseSnoozeChoice(choice) {
+  // Accepts "1h", "tomorrow", "tomorrow 9am", "monday", "friday 5pm",
+  // or a plain number of hours. Returns ISO string or null.
+  const c = (choice || '').trim().toLowerCase();
+  if (!c) return null;
+  const now = new Date();
+  // Plain hours: "3h", "30m"
+  let m = c.match(/^(\d+)\s*([hm])$/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    const ms = m[2] === 'h' ? n * 3600 * 1000 : n * 60 * 1000;
+    return new Date(now.getTime() + ms).toISOString();
+  }
+  // "tomorrow [9am]"
+  if (c.startsWith('tomorrow')) {
+    const d = new Date(now);
+    d.setDate(d.getDate() + 1);
+    const t = c.replace('tomorrow', '').trim();
+    if (t) applyTimeOfDay(d, t); else d.setHours(9, 0, 0, 0);
+    return d.toISOString();
+  }
+  // "monday", "tuesday", ...
+  const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  for (let i = 0; i < days.length; i++) {
+    if (c.startsWith(days[i])) {
+      const d = new Date(now);
+      const diff = (i - d.getDay() + 7) % 7 || 7;
+      d.setDate(d.getDate() + diff);
+      const t = c.replace(days[i], '').trim();
+      if (t) applyTimeOfDay(d, t); else d.setHours(9, 0, 0, 0);
+      return d.toISOString();
+    }
+  }
+  return null;
+}
+
+function applyTimeOfDay(date, t) {
+  // "9am", "5pm", "13:30"
+  const m12 = t.match(/^(\d+)(?::(\d+))?\s*(am|pm)$/);
+  if (m12) {
+    let h = parseInt(m12[1], 10) % 12;
+    if (m12[3] === 'pm') h += 12;
+    date.setHours(h, m12[2] ? parseInt(m12[2], 10) : 0, 0, 0);
+    return;
+  }
+  const m24 = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) {
+    date.setHours(parseInt(m24[1], 10), parseInt(m24[2], 10), 0, 0);
+    return;
+  }
+  date.setHours(9, 0, 0, 0);
+}
+
+async function snoozeTab(url, title) {
+  if (!url) return;
+  const choice = prompt('Snooze until? (e.g. 1h, 3h, tomorrow, tomorrow 9am, monday, friday 5pm)', 'tomorrow 9am');
+  if (!choice) return;
+  const wakeAt = parseSnoozeChoice(choice);
+  if (!wakeAt) {
+    showToast('Could not parse time');
+    return;
+  }
+  const tab = (openTabs || []).find(t => t.url === url);
+  try {
+    await fetch('/api/snoozes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url,
+        title: title || (tab && tab.title) || url,
+        favicon_url: tab && tab.favIconUrl || null,
+        wake_at: wakeAt,
+      }),
+    });
+    await sendToExtension('closeTabs', { urls: [url], exact: true });
+    playCloseSound();
+    const when = new Date(wakeAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    showToast(`Snoozed until ${when}`);
+    setTimeout(() => refreshDynamicContent(), 300);
+  } catch {
+    showToast('Failed to snooze');
+  }
+}
+
+async function unsnoozeNow(id) {
+  try {
+    const snooze = activeSnoozes.find(s => s.id === Number(id));
+    if (snooze) {
+      await sendToExtension('openTabs', { urls: [snooze.url] });
+    }
+    await fetch(`/api/snoozes/${id}`, { method: 'DELETE' });
+    showToast('Tab restored');
+    setTimeout(() => refreshDynamicContent(), 300);
+  } catch { showToast('Failed to restore'); }
+}
+
+async function cancelSnooze(id) {
+  try {
+    await fetch(`/api/snoozes/${id}`, { method: 'DELETE' });
+    showToast('Snooze cancelled');
+    setTimeout(() => refreshDynamicContent(), 300);
+  } catch { showToast('Failed to cancel'); }
+}
+
+async function fetchYesterdayStats() {
+  try {
+    const res = await fetch('/api/stats/yesterday');
+    if (!res.ok) return;
+    const data = await res.json();
+    yesterdayStat = data.stat;
+  } catch { yesterdayStat = null; }
+}
 
 async function fetchSessions() {
   try {
@@ -2759,6 +3113,26 @@ function formatSessionDate(iso) {
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+function getWorkspaces() {
+  const set = new Set(['Default']);
+  for (const s of savedSessions) set.add(s.workspace || 'Default');
+  return [...set];
+}
+
+function renderWorkspaceTabs() {
+  const tabs = document.getElementById('workspaceTabs');
+  if (!tabs) return;
+  const workspaces = getWorkspaces();
+  // Make sure currentWorkspace exists in list, otherwise reset
+  if (!workspaces.includes(currentWorkspace)) currentWorkspace = workspaces[0];
+  tabs.innerHTML = workspaces.map(w => {
+    const safe = (w || '').replace(/"/g, '&quot;');
+    const cls = w === currentWorkspace ? 'workspace-tab active' : 'workspace-tab';
+    const count = savedSessions.filter(s => (s.workspace || 'Default') === w).length;
+    return `<button class="${cls}" data-action="workspace-tab" data-workspace="${safe}">${safe} <span class="workspace-count">${count}</span></button>`;
+  }).join('') + `<button class="workspace-tab workspace-tab-new" data-action="new-workspace" title="Create workspace">+</button>`;
+}
+
 function renderSessions() {
   const section = document.getElementById('sessionsSection');
   const list = document.getElementById('sessionsList');
@@ -2773,8 +3147,16 @@ function renderSessions() {
 
   section.style.display = 'block';
   countEl.textContent = `(${savedSessions.length})`;
+  renderWorkspaceTabs();
 
-  list.innerHTML = savedSessions.map(s => {
+  const filtered = savedSessions.filter(s => (s.workspace || 'Default') === currentWorkspace);
+
+  if (filtered.length === 0) {
+    list.innerHTML = `<div class="sessions-empty" style="display:block">Nothing in <strong>${currentWorkspace}</strong> yet.</div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(s => {
     const tabCount = (s.tabs || []).length;
     const safeName = (s.name || '').replace(/"/g, '&quot;');
     return `<div class="session-row" data-session-id="${s.id}">
@@ -2785,12 +3167,128 @@ function renderSessions() {
       <div class="session-actions">
         <button class="session-btn session-btn-switch" data-action="switch-session" data-session-id="${s.id}" title="Close current tabs (auto-saved) and open this session">Switch</button>
         <button class="session-btn session-btn-restore" data-action="restore-session" data-session-id="${s.id}" title="Open this session's tabs alongside current ones">Restore</button>
+        <button class="session-btn" data-action="rename-workspace" data-session-id="${s.id}" title="Move to workspace">Move</button>
         <button class="session-btn session-btn-delete" data-action="delete-session" data-session-id="${s.id}">Delete</button>
       </div>
     </div>`;
   }).join('');
 
   if (empty) empty.style.display = 'none';
+}
+
+async function renameWorkspace(sessionId) {
+  const session = savedSessions.find(s => s.id === Number(sessionId));
+  if (!session) return;
+  const next = prompt('Move to workspace:', session.workspace || 'Default');
+  if (!next) return;
+  try {
+    const res = await fetch(`/api/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspace: next.trim().slice(0, 50) || 'Default' }),
+    });
+    if (!res.ok) { showToast('Failed to move'); return; }
+    await fetchSessions();
+    currentWorkspace = next.trim() || 'Default';
+    renderSessions();
+    showToast(`Moved to ${currentWorkspace}`);
+  } catch { showToast('Failed to move'); }
+}
+
+function renderSnoozes() {
+  const section = document.getElementById('snoozeSection');
+  const list = document.getElementById('snoozeList');
+  const countEl = document.getElementById('snoozeCount');
+  if (!section || !list) return;
+  if (activeSnoozes.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  if (countEl) countEl.textContent = `${activeSnoozes.length} tab${activeSnoozes.length !== 1 ? 's' : ''}`;
+  list.innerHTML = activeSnoozes.map(s => {
+    const wake = new Date(s.wake_at.replace(' ', 'T') + (s.wake_at.endsWith('Z') ? '' : 'Z'));
+    const wakeStr = isNaN(wake.getTime()) ? s.wake_at : wake.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const ms = wake.getTime() - Date.now();
+    const inLabel = ms <= 0 ? 'now' : msToHumanIn(ms);
+    let host = '';
+    try { host = new URL(s.url).hostname.replace(/^www\./, ''); } catch { }
+    const safeUrl = (s.url || '').replace(/"/g, '&quot;');
+    return `<div class="snooze-row">
+      <div class="snooze-info">
+        <a class="snooze-title" href="${safeUrl}" target="_top">${(s.title || s.url || '').replace(/</g, '&lt;')}</a>
+        <div class="snooze-meta"><span>${host}</span><span>wakes ${inLabel} (${wakeStr})</span></div>
+      </div>
+      <div class="snooze-actions">
+        <button class="session-btn" data-action="unsnooze-now" data-snooze-id="${s.id}">Wake now</button>
+        <button class="session-btn session-btn-delete" data-action="cancel-snooze" data-snooze-id="${s.id}">Cancel</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function msToHumanIn(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 60) return `in ${m}m`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `in ${h}h`;
+  const d = Math.round(h / 24);
+  return `in ${d}d`;
+}
+
+function renderYesterdaySummary() {
+  const card = document.getElementById('summaryCard');
+  const stats = document.getElementById('summaryStats');
+  if (!card || !stats) return;
+  if (!yesterdayStat) {
+    card.style.display = 'none';
+    return;
+  }
+  const top3 = Object.entries(yesterdayStat.domains || {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+  if ((yesterdayStat.tabs_opened || 0) === 0 && (yesterdayStat.tabs_closed || 0) === 0 && top3.length === 0) {
+    card.style.display = 'none';
+    return;
+  }
+  card.style.display = 'block';
+  stats.innerHTML = `
+    <div class="summary-stat"><div class="summary-stat-num">${yesterdayStat.tabs_opened || 0}</div><div class="summary-stat-label">opened</div></div>
+    <div class="summary-stat"><div class="summary-stat-num">${yesterdayStat.tabs_closed || 0}</div><div class="summary-stat-label">closed</div></div>
+    <div class="summary-stat summary-stat-top">
+      <div class="summary-stat-label">Top domains</div>
+      <div class="summary-top-list">${top3.map(([d, n]) => `<span><strong>${d}</strong> ${n}</span>`).join('') || '<span class="muted">—</span>'}</div>
+    </div>`;
+}
+
+// Surface a "save these as a session?" banner when 5+ open tabs share a host
+function renderSessionSuggestions() {
+  const banner = document.getElementById('suggestBanner');
+  if (!banner) return;
+  const tabs = getRealTabs();
+  if (tabs.length < 5) { banner.style.display = 'none'; return; }
+  const groups = {};
+  for (const t of tabs) {
+    try {
+      const host = new URL(t.url).hostname;
+      if (!host) continue;
+      groups[host] = (groups[host] || 0) + 1;
+    } catch { }
+  }
+  const dismissed = new Set((sessionStorage.getItem('tabout-suggest-dismissed') || '').split(','));
+  const candidates = Object.entries(groups)
+    .filter(([host, n]) => n >= 5 && !dismissed.has(host))
+    .filter(([host]) => !savedSessions.some(s => (s.name || '').toLowerCase().includes(host)))
+    .sort((a, b) => b[1] - a[1]);
+  if (candidates.length === 0) { banner.style.display = 'none'; return; }
+  const [host, n] = candidates[0];
+  banner.style.display = 'flex';
+  banner.innerHTML = `
+    <span class="suggest-text">You have <strong>${n} ${host.replace(/^www\./, '')}</strong> tabs open. Save them as a session?</span>
+    <div class="suggest-actions">
+      <button class="suggest-btn suggest-btn-primary" data-action="suggest-save" data-suggest-host="${host}" data-suggest-count="${n}">Save as session</button>
+      <button class="suggest-btn" data-action="suggest-dismiss" data-suggest-host="${host}">Dismiss</button>
+    </div>`;
 }
 
 async function saveCurrentSession() {
@@ -2935,19 +3433,52 @@ function closePalette() {
   if (overlay) overlay.style.display = 'none';
 }
 
+// Available commands when the palette query starts with `>`. Each command
+// has a label (shown in the row) and a run() function called on Enter.
+function getPaletteCommands() {
+  const cmds = [
+    { label: 'Save current tabs as session', run: () => saveCurrentSession() },
+    { label: 'Sweep stale tabs', run: () => openSweepModal() },
+    { label: 'Switch theme: System', run: () => { localStorage.setItem('tabout-theme', 'system'); applyTheme('system'); showToast('Theme: System'); } },
+    { label: 'Switch theme: Light', run: () => { localStorage.setItem('tabout-theme', 'light'); applyTheme('light'); showToast('Theme: Light'); } },
+    { label: 'Switch theme: Dark', run: () => { localStorage.setItem('tabout-theme', 'dark'); applyTheme('dark'); showToast('Theme: Dark'); } },
+    { label: 'Open settings', run: () => document.getElementById('settingsToggle')?.click() },
+    { label: 'Refresh dashboard', run: () => refreshDynamicContent() },
+    { label: 'Clear recently closed', run: () => { localStorage.removeItem('tabout-recently-closed'); renderRecentlyClosed(); showToast('Cleared'); } },
+  ];
+  for (const s of savedSessions) {
+    cmds.push({
+      label: `Switch to session: ${s.name}`,
+      run: () => switchToSession(s.id),
+    });
+    cmds.push({
+      label: `Restore session: ${s.name}`,
+      run: () => restoreSession(s.id),
+    });
+  }
+  return cmds;
+}
+
 function filterPalette(query) {
-  const q = (query || '').trim().toLowerCase();
-  const tabs = getRealTabs();
-  if (!q) {
-    palette.filtered = tabs.slice(0, 50);
+  const raw = query || '';
+  const isCmd = raw.startsWith('>');
+  const q = (isCmd ? raw.slice(1) : raw).trim().toLowerCase();
+  if (isCmd) {
+    const cmds = getPaletteCommands();
+    palette.filtered = (q
+      ? cmds.filter(c => c.label.toLowerCase().includes(q))
+      : cmds
+    ).slice(0, 50).map(c => ({ kind: 'command', label: c.label, run: c.run }));
   } else {
-    palette.filtered = tabs
-      .filter(t => {
-        const title = (t.title || '').toLowerCase();
-        const url = (t.url || '').toLowerCase();
-        return title.includes(q) || url.includes(q);
-      })
-      .slice(0, 50);
+    const tabs = getRealTabs();
+    const matched = q
+      ? tabs.filter(t => {
+          const title = (t.title || '').toLowerCase();
+          const url = (t.url || '').toLowerCase();
+          return title.includes(q) || url.includes(q);
+        })
+      : tabs;
+    palette.filtered = matched.slice(0, 50).map(t => ({ kind: 'tab', tab: t }));
   }
   palette.cursor = 0;
   renderPalette();
@@ -2957,16 +3488,23 @@ function renderPalette() {
   const results = document.getElementById('paletteResults');
   if (!results) return;
   if (palette.filtered.length === 0) {
-    results.innerHTML = `<div class="palette-empty">No matching tabs</div>`;
+    results.innerHTML = `<div class="palette-empty">No matches</div>`;
     return;
   }
-  results.innerHTML = palette.filtered.map((t, i) => {
+  results.innerHTML = palette.filtered.map((entry, i) => {
+    const activeCls = i === palette.cursor ? ' active' : '';
+    if (entry.kind === 'command') {
+      return `<div class="palette-row palette-row-cmd${activeCls}" data-palette-index="${i}">
+        <span class="palette-cmd-icon">›</span>
+        <span class="palette-title">${entry.label.replace(/</g, '&lt;')}</span>
+      </div>`;
+    }
+    const t = entry.tab;
     let host = '';
     try { host = new URL(t.url).hostname.replace(/^www\./, ''); } catch { }
     const safeUrl = (t.url || '').replace(/"/g, '&quot;');
     const title = (t.title || t.url || '').replace(/</g, '&lt;');
     const favicon = getTabFavicon(t);
-    const activeCls = i === palette.cursor ? ' active' : '';
     return `<div class="palette-row${activeCls}" data-palette-index="${i}" data-palette-url="${safeUrl}">
       ${favicon ? `<img class="palette-favicon" src="${favicon}" alt="" onerror="this.style.display='none'">` : ''}
       <span class="palette-title">${title}</span>
@@ -2986,10 +3524,14 @@ function movePaletteCursor(delta) {
 }
 
 async function activatePaletteRow(idx) {
-  const tab = palette.filtered[idx];
-  if (!tab) return;
+  const entry = palette.filtered[idx];
+  if (!entry) return;
   closePalette();
-  await sendToExtension('focusTab', { url: tab.url });
+  if (entry.kind === 'command') {
+    try { await entry.run(); } catch { }
+    return;
+  }
+  await sendToExtension('focusTab', { url: entry.tab.url });
 }
 
 function initCommandPalette() {

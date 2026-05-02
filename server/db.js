@@ -156,7 +156,55 @@ db.exec(`
     urls_json   TEXT    NOT NULL,
     created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
   );
+
+  -- ──────────────────────────────────────────────────────────────────────────
+  -- tab_notes table
+  -- One free-text note per URL. Solves "why is this tab still open" for
+  -- chronic tab-hoarders. Note is keyed by URL so it follows the page even
+  -- after the tab is closed and reopened.
+  -- ──────────────────────────────────────────────────────────────────────────
+  CREATE TABLE IF NOT EXISTS tab_notes (
+    url        TEXT PRIMARY KEY,
+    note       TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- ──────────────────────────────────────────────────────────────────────────
+  -- snoozed_tabs table
+  -- Tabs the user has snoozed — closed in the browser, scheduled to be
+  -- reopened at wake_at. The extension's chrome.alarms reads this and
+  -- creates the tab when the time arrives.
+  -- ──────────────────────────────────────────────────────────────────────────
+  CREATE TABLE IF NOT EXISTS snoozed_tabs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    url         TEXT NOT NULL,
+    title       TEXT,
+    favicon_url TEXT,
+    wake_at     TEXT NOT NULL,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    woken       INTEGER NOT NULL DEFAULT 0
+  );
+
+  -- ──────────────────────────────────────────────────────────────────────────
+  -- daily_stats table
+  -- Lightweight per-day counters for the "yesterday" summary card.
+  -- The extension's background script writes increments via the API.
+  -- ──────────────────────────────────────────────────────────────────────────
+  CREATE TABLE IF NOT EXISTS daily_stats (
+    day            TEXT PRIMARY KEY,
+    tabs_opened    INTEGER NOT NULL DEFAULT 0,
+    tabs_closed    INTEGER NOT NULL DEFAULT 0,
+    domains_json   TEXT NOT NULL DEFAULT '{}'
+  );
 `);
+
+// Add workspace column to sessions for the workspaces feature. Older DBs
+// created before this column was added will need it.
+try {
+  db.prepare("SELECT workspace FROM sessions LIMIT 1").get();
+} catch {
+  db.exec("ALTER TABLE sessions ADD COLUMN workspace TEXT NOT NULL DEFAULT 'Default'");
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Prepared statements — query helpers
@@ -383,18 +431,18 @@ const searchDeferredArchived = db.prepare(`
 // ── SESSIONS QUERIES ──────────────────────────────────────────────────────
 
 const insertSession = db.prepare(`
-  INSERT INTO sessions (name, urls_json)
-  VALUES (:name, :urls_json)
+  INSERT INTO sessions (name, urls_json, workspace)
+  VALUES (:name, :urls_json, :workspace)
 `);
 
 const getSessions = db.prepare(`
-  SELECT id, name, urls_json, created_at
+  SELECT id, name, urls_json, created_at, workspace
   FROM   sessions
   ORDER BY created_at DESC
 `);
 
 const getSession = db.prepare(`
-  SELECT id, name, urls_json, created_at
+  SELECT id, name, urls_json, created_at, workspace
   FROM   sessions
   WHERE  id = :id
 `);
@@ -402,6 +450,70 @@ const getSession = db.prepare(`
 const deleteSession = db.prepare(`
   DELETE FROM sessions
   WHERE id = :id
+`);
+
+const updateSessionWorkspace = db.prepare(`
+  UPDATE sessions SET workspace = :workspace WHERE id = :id
+`);
+
+// ── TAB NOTES ──────────────────────────────────────────────────────────────
+
+const upsertNote = db.prepare(`
+  INSERT INTO tab_notes (url, note, updated_at)
+  VALUES (:url, :note, datetime('now'))
+  ON CONFLICT(url) DO UPDATE SET
+    note = excluded.note,
+    updated_at = excluded.updated_at
+`);
+
+const deleteNote = db.prepare(`
+  DELETE FROM tab_notes
+  WHERE url = :url
+`);
+
+const getAllNotes = db.prepare(`
+  SELECT url, note, updated_at FROM tab_notes
+`);
+
+// ── SNOOZED TABS ───────────────────────────────────────────────────────────
+
+const insertSnooze = db.prepare(`
+  INSERT INTO snoozed_tabs (url, title, favicon_url, wake_at)
+  VALUES (:url, :title, :favicon_url, :wake_at)
+`);
+
+const getActiveSnoozes = db.prepare(`
+  SELECT * FROM snoozed_tabs
+  WHERE  woken = 0
+  ORDER BY wake_at ASC
+`);
+
+const getDueSnoozes = db.prepare(`
+  SELECT * FROM snoozed_tabs
+  WHERE  woken = 0 AND wake_at <= datetime('now')
+`);
+
+const markSnoozeWoken = db.prepare(`
+  UPDATE snoozed_tabs SET woken = 1 WHERE id = :id
+`);
+
+const deleteSnooze = db.prepare(`
+  DELETE FROM snoozed_tabs WHERE id = :id
+`);
+
+// ── DAILY STATS ────────────────────────────────────────────────────────────
+
+const upsertDailyStat = db.prepare(`
+  INSERT INTO daily_stats (day, tabs_opened, tabs_closed, domains_json)
+  VALUES (:day, :tabs_opened, :tabs_closed, :domains_json)
+  ON CONFLICT(day) DO UPDATE SET
+    tabs_opened  = tabs_opened + excluded.tabs_opened,
+    tabs_closed  = tabs_closed + excluded.tabs_closed,
+    domains_json = excluded.domains_json
+`);
+
+const getDailyStat = db.prepare(`
+  SELECT * FROM daily_stats WHERE day = :day
 `);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -467,4 +579,15 @@ module.exports = {
   getSessions,      // () → all sessions ordered newest first
   getSession,       // ({ id }) → single session row or undefined
   deleteSession,    // ({ id }) → deletes a session
+  updateSessionWorkspace, // ({ id, workspace })
+  upsertNote,       // ({ url, note })
+  deleteNote,       // ({ url })
+  getAllNotes,      // () → all notes
+  insertSnooze,     // ({ url, title, favicon_url, wake_at })
+  getActiveSnoozes, // () → all not-yet-woken snoozes
+  getDueSnoozes,    // () → snoozes whose wake_at <= now
+  markSnoozeWoken,  // ({ id })
+  deleteSnooze,     // ({ id })
+  upsertDailyStat,  // ({ day, tabs_opened, tabs_closed, domains_json })
+  getDailyStat,     // ({ day })
 };

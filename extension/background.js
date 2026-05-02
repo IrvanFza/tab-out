@@ -68,14 +68,67 @@ chrome.runtime.onStartup.addListener(() => {
 
 // Update the badge whenever a new tab is opened — the user might be adding
 // work that should bump the mission count
-chrome.tabs.onCreated.addListener(() => {
+chrome.tabs.onCreated.addListener((tab) => {
   updateBadge();
+  recordTabEvent('open', tab && tab.url);
 });
 
 // Update the badge whenever a tab is closed — a mission may have been completed
 chrome.tabs.onRemoved.addListener(() => {
   updateBadge();
+  recordTabEvent('close', null);
 });
+
+// ─── Daily stats tracking ──────────────────────────────────────────────────
+// Lightweight fire-and-forget events to the local server so the dashboard
+// can show "yesterday at a glance." We only send the hostname, not the full
+// URL, and never block on a failed network call.
+async function recordTabEvent(type, url) {
+  try {
+    let domain = null;
+    if (url) {
+      try { domain = new URL(url).hostname; } catch { /* skip */ }
+    }
+    await fetch('http://localhost:3456/api/stats/event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type, domain }),
+    });
+  } catch { /* server may be down — drop the event */ }
+}
+
+// ─── Snooze waker ──────────────────────────────────────────────────────────
+// Poll the server every minute for snoozed tabs whose wake_at is past, then
+// open them as background tabs and mark them woken. Uses chrome.alarms so it
+// keeps firing even when the service worker has been put to sleep.
+
+chrome.alarms.create('tabout-snooze-check', { periodInMinutes: 1 });
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== 'tabout-snooze-check') return;
+  await wakeDueSnoozes();
+});
+
+async function wakeDueSnoozes() {
+  try {
+    const res = await fetch('http://localhost:3456/api/snoozes/due');
+    if (!res.ok) return;
+    const data = await res.json();
+    const due = Array.isArray(data.due) ? data.due : [];
+    if (due.length === 0) return;
+    const win = await chrome.windows.getCurrent().catch(() => null);
+    for (const s of due) {
+      try {
+        await chrome.tabs.create({
+          url: s.url,
+          windowId: win ? win.id : undefined,
+          active: false,
+        });
+        await fetch(`http://localhost:3456/api/snoozes/${s.id}/woken`, { method: 'POST' });
+      } catch { /* skip URLs Chrome refuses */ }
+    }
+  } catch { /* server may be down */ }
+}
 
 // ─── Polling ─────────────────────────────────────────────────────────────────
 

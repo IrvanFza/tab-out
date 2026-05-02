@@ -1635,6 +1635,28 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
 }
 
 /* ---- Section action button (e.g. "Save session" in tabs header) ---- */
+.open-tabs-filter {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--warm-gray);
+  border-radius: 6px;
+  padding: 5px 10px;
+  color: var(--ink);
+  width: 200px;
+  outline: none;
+  transition: border-color 0.15s, width 0.2s;
+}
+
+.open-tabs-filter::placeholder {
+  color: var(--muted);
+}
+
+.open-tabs-filter:focus {
+  border-color: var(--accent-amber);
+  width: 280px;
+}
+
 .section-action {
   font-family: 'DM Sans', sans-serif;
   font-size: 12px;
@@ -1762,6 +1784,250 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
   color: var(--muted);
   font-style: italic;
   padding: 8px 0;
+}
+
+/* ---- Workspace tabs above sessions list ---- */
+.workspace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  margin-top: -4px;
+}
+
+.workspace-tab {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--warm-gray);
+  background: var(--card-bg);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workspace-tab:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.workspace-tab.active {
+  color: var(--paper);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.workspace-count {
+  font-size: 10px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.workspace-tab-new {
+  width: 28px;
+  justify-content: center;
+  padding: 4px 0;
+  font-weight: 400;
+}
+
+/* ---- Snoozed tabs section ---- */
+.snooze-section {
+  margin: 16px 0 24px;
+}
+
+.snooze-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.snooze-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--warm-gray);
+  border-radius: 8px;
+}
+
+.snooze-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.snooze-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-decoration: none;
+}
+
+.snooze-title:hover { color: var(--accent-amber); }
+
+.snooze-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+  display: flex;
+  gap: 8px;
+}
+
+.snooze-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ---- Yesterday summary card ---- */
+.summary-card {
+  background: var(--card-bg);
+  border: 1px solid var(--warm-gray);
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin: 12px 0 24px;
+}
+
+.summary-title {
+  font-family: 'Newsreader', serif;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.summary-stats {
+  display: flex;
+  gap: 32px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.summary-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.summary-stat-num {
+  font-family: 'Newsreader', serif;
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--ink);
+}
+
+.summary-stat-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.summary-stat-top {
+  flex: 1;
+  min-width: 200px;
+}
+
+.summary-top-list {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.summary-top-list strong {
+  font-weight: 500;
+}
+
+/* ---- Session-suggestion banner ---- */
+.suggest-banner {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 14px;
+  background: rgba(200, 113, 58, 0.08);
+  border: 1px solid rgba(200, 113, 58, 0.3);
+  border-radius: 8px;
+  margin: 8px 0 16px;
+  font-size: 13px;
+}
+
+.suggest-text {
+  flex: 1;
+  color: var(--ink);
+}
+
+.suggest-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.suggest-btn {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--warm-gray);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.suggest-btn:hover {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.suggest-btn-primary {
+  background: var(--accent-amber);
+  border-color: var(--accent-amber);
+  color: var(--paper);
+}
+
+.suggest-btn-primary:hover {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+/* ---- Note + snooze chip-action icons ---- */
+.chip-note-active {
+  color: var(--accent-amber) !important;
+}
+
+.palette-row-cmd .palette-cmd-icon {
+  color: var(--accent-amber);
+  font-weight: bold;
+  width: 16px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ---- Tab age label (next to chip title) ---- */
+.chip-age {
+  font-size: 10px;
+  color: var(--muted);
+  margin-left: 6px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+.page-chip.chip-stale .chip-age {
+  color: var(--accent-amber);
+  opacity: 1;
 }
 
 /* ---- Stale tab indicator (chip dot for tabs untouched 7+ days) ---- */

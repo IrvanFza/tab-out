@@ -41,6 +41,17 @@ const {
   getSessions,
   getSession,
   deleteSession,
+  updateSessionWorkspace,
+  upsertNote,
+  deleteNote,
+  getAllNotes,
+  insertSnooze,
+  getActiveSnoozes,
+  getDueSnoozes,
+  markSnoozeWoken,
+  deleteSnooze,
+  upsertDailyStat,
+  getDailyStat,
 } = require('./db');
 
 // An Express Router is like a mini-app: it holds a group of related routes.
@@ -372,6 +383,7 @@ router.get('/sessions', (req, res) => {
       id: r.id,
       name: r.name,
       created_at: r.created_at,
+      workspace: r.workspace || 'Default',
       tabs: safeParseTabs(r.urls_json),
     }));
     res.json({ sessions });
@@ -385,6 +397,7 @@ router.post('/sessions', (req, res) => {
   try {
     const name = (req.body && req.body.name || '').trim();
     const tabs = req.body && req.body.tabs;
+    const workspace = ((req.body && req.body.workspace) || 'Default').toString().slice(0, 50) || 'Default';
     if (!name) return res.status(400).json({ error: 'name is required' });
     if (!Array.isArray(tabs) || tabs.length === 0) {
       return res.status(400).json({ error: 'tabs array is required' });
@@ -399,6 +412,7 @@ router.post('/sessions', (req, res) => {
     const result = insertSession.run({
       name: name.slice(0, 100),
       urls_json: JSON.stringify(slim),
+      workspace,
     });
     const row = getSession.get({ id: result.lastInsertRowid });
     res.json({
@@ -406,12 +420,27 @@ router.post('/sessions', (req, res) => {
         id: row.id,
         name: row.name,
         created_at: row.created_at,
+        workspace: row.workspace,
         tabs: safeParseTabs(row.urls_json),
       },
     });
   } catch (err) {
     console.error('[routes] POST /sessions failed:', err.message);
     res.status(500).json({ error: 'Failed to save session' });
+  }
+});
+
+router.patch('/sessions/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid ID' });
+    const workspace = ((req.body && req.body.workspace) || '').toString().slice(0, 50);
+    if (!workspace) return res.status(400).json({ error: 'workspace is required' });
+    updateSessionWorkspace.run({ id, workspace });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[routes] PATCH /sessions/:id failed:', err.message);
+    res.status(500).json({ error: 'Failed to update session' });
   }
 });
 
@@ -424,6 +453,158 @@ router.delete('/sessions/:id', (req, res) => {
   } catch (err) {
     console.error('[routes] DELETE /sessions/:id failed:', err.message);
     res.status(500).json({ error: 'Failed to delete session' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TAB NOTES
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get('/notes', (req, res) => {
+  try {
+    const rows = getAllNotes.all();
+    const notes = {};
+    for (const r of rows) notes[r.url] = { note: r.note, updated_at: r.updated_at };
+    res.json({ notes });
+  } catch (err) {
+    console.error('[routes] GET /notes failed:', err.message);
+    res.status(500).json({ error: 'Failed to fetch notes' });
+  }
+});
+
+router.put('/notes', (req, res) => {
+  try {
+    const url = (req.body && req.body.url || '').toString();
+    const note = (req.body && req.body.note || '').toString().slice(0, 1000);
+    if (!url) return res.status(400).json({ error: 'url is required' });
+    if (note.trim() === '') {
+      deleteNote.run({ url });
+    } else {
+      upsertNote.run({ url, note });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[routes] PUT /notes failed:', err.message);
+    res.status(500).json({ error: 'Failed to save note' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SNOOZED TABS
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get('/snoozes', (req, res) => {
+  try {
+    const active = getActiveSnoozes.all();
+    res.json({ snoozes: active });
+  } catch (err) {
+    console.error('[routes] GET /snoozes failed:', err.message);
+    res.status(500).json({ error: 'Failed to fetch snoozes' });
+  }
+});
+
+router.post('/snoozes', (req, res) => {
+  try {
+    const { url, title, favicon_url, wake_at } = req.body || {};
+    if (!url || !wake_at) return res.status(400).json({ error: 'url and wake_at required' });
+    insertSnooze.run({
+      url: String(url),
+      title: title ? String(title).slice(0, 300) : null,
+      favicon_url: favicon_url || null,
+      wake_at: String(wake_at),
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[routes] POST /snoozes failed:', err.message);
+    res.status(500).json({ error: 'Failed to snooze' });
+  }
+});
+
+router.delete('/snoozes/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid ID' });
+    deleteSnooze.run({ id });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[routes] DELETE /snoozes/:id failed:', err.message);
+    res.status(500).json({ error: 'Failed to remove snooze' });
+  }
+});
+
+// Polled by the extension's chrome.alarms hook to find tabs ready to wake
+router.get('/snoozes/due', (req, res) => {
+  try {
+    const due = getDueSnoozes.all();
+    res.json({ due });
+  } catch (err) {
+    console.error('[routes] GET /snoozes/due failed:', err.message);
+    res.status(500).json({ error: 'Failed to check due snoozes' });
+  }
+});
+
+router.post('/snoozes/:id/woken', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid ID' });
+    markSnoozeWoken.run({ id });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[routes] POST /snoozes/:id/woken failed:', err.message);
+    res.status(500).json({ error: 'Failed to mark snooze woken' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DAILY STATS — increments come from the extension's tab event listeners
+// ─────────────────────────────────────────────────────────────────────────────
+
+router.get('/stats/yesterday', (req, res) => {
+  try {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    const day = d.toISOString().slice(0, 10);
+    const row = getDailyStat.get({ day });
+    if (!row) return res.json({ stat: null });
+    let domains = {};
+    try { domains = JSON.parse(row.domains_json); } catch { }
+    res.json({
+      stat: {
+        day: row.day,
+        tabs_opened: row.tabs_opened,
+        tabs_closed: row.tabs_closed,
+        domains,
+      },
+    });
+  } catch (err) {
+    console.error('[routes] GET /stats/yesterday failed:', err.message);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+router.post('/stats/event', (req, res) => {
+  try {
+    const { type, domain } = req.body || {};
+    if (type !== 'open' && type !== 'close') {
+      return res.status(400).json({ error: 'type must be open or close' });
+    }
+    const day = new Date().toISOString().slice(0, 10);
+    const existing = getDailyStat.get({ day });
+    let domains = {};
+    if (existing) {
+      try { domains = JSON.parse(existing.domains_json); } catch { }
+    }
+    if (domain) domains[domain] = (domains[domain] || 0) + 1;
+    upsertDailyStat.run({
+      day,
+      tabs_opened: type === 'open' ? 1 : 0,
+      tabs_closed: type === 'close' ? 1 : 0,
+      domains_json: JSON.stringify(domains),
+    });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[routes] POST /stats/event failed:', err.message);
+    res.status(500).json({ error: 'Failed to record event' });
   }
 });
 
@@ -466,8 +647,8 @@ router.get('/quote', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/config', (req, res) => {
   try {
-    const { port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks } = config;
-    res.json({ port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks: quickLinks || [] });
+    const { port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks, staleWhitelist } = config;
+    res.json({ port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks: quickLinks || [], staleWhitelist: staleWhitelist || [] });
   } catch (err) {
     console.error('[routes] GET /config failed:', err.message);
     res.status(500).json({ error: 'Failed to fetch config' });
@@ -482,7 +663,7 @@ router.get('/config', (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 router.patch('/config', (req, res) => {
   try {
-    const allowed = ['userName', 'pomodoroWorkMinutes', 'pomodoroBreakMinutes', 'clockShowSeconds', 'clockFormat', 'quoteText', 'quoteAuthor', 'useDynamicQuote', 'searchEngine', 'quickLinks'];
+    const allowed = ['userName', 'pomodoroWorkMinutes', 'pomodoroBreakMinutes', 'clockShowSeconds', 'clockFormat', 'quoteText', 'quoteAuthor', 'useDynamicQuote', 'searchEngine', 'quickLinks', 'staleWhitelist'];
     const updates = {};
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
@@ -493,8 +674,8 @@ router.patch('/config', (req, res) => {
       return res.status(400).json({ error: 'No valid config keys provided' });
     }
     config.save(updates);
-    const { port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks } = config;
-    res.json({ port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks: quickLinks || [] });
+    const { port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks, staleWhitelist } = config;
+    res.json({ port, userName, pomodoroWorkMinutes, pomodoroBreakMinutes, clockShowSeconds, clockFormat, quoteText, quoteAuthor, useDynamicQuote, searchEngine, quickLinks: quickLinks || [], staleWhitelist: staleWhitelist || [] });
   } catch (err) {
     console.error('[routes] PATCH /config failed:', err.message);
     res.status(400).json({ error: err.message });

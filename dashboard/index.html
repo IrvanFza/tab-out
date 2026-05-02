@@ -110,6 +110,7 @@
       <div class="active-section" id="openTabsSection" style="display:none">
         <div class="section-header">
           <h2 id="openTabsSectionTitle"><span id="statTabs">—</span> open tabs</h2>
+          <input type="text" class="open-tabs-filter" id="openTabsFilter" placeholder="Filter tabs...">
           <div class="section-line"></div>
           <button class="section-action" id="saveSessionBtn" data-action="save-session" title="Save current tabs as a named session">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
@@ -187,6 +188,32 @@
     </div><!-- end .dashboard-columns -->
 
     <!-- ================================================================
+       SESSION SUGGESTIONS — surfaces clusters of tabs that look saveable
+       ================================================================ -->
+    <div class="suggest-banner" id="suggestBanner" style="display:none"></div>
+
+    <!-- ================================================================
+       SNOOZED TABS — tabs the user has parked for later. Section appears
+       only when there's at least one active snooze.
+       ================================================================ -->
+    <div class="snooze-section" id="snoozeSection" style="display:none">
+      <div class="section-header">
+        <h2>Snoozed</h2>
+        <div class="section-line"></div>
+        <div class="section-count" id="snoozeCount"></div>
+      </div>
+      <div class="snooze-list" id="snoozeList"></div>
+    </div>
+
+    <!-- ================================================================
+       YESTERDAY SUMMARY — small card showing yesterday's tab stats.
+       ================================================================ -->
+    <div class="summary-card" id="summaryCard" style="display:none">
+      <div class="summary-title">Yesterday at a glance</div>
+      <div class="summary-stats" id="summaryStats"></div>
+    </div>
+
+    <!-- ================================================================
        SESSIONS — saved snapshots of a set of tabs you can restore later.
        Lives below the columns as a full-width collapsible row.
        ================================================================ -->
@@ -196,6 +223,7 @@
         <div class="section-line"></div>
         <div class="section-count" id="sessionsCount"></div>
       </div>
+      <div class="workspace-tabs" id="workspaceTabs"></div>
       <div class="sessions-body" id="sessionsBody">
         <div class="sessions-list" id="sessionsList"></div>
         <div class="sessions-empty" id="sessionsEmpty" style="display:none">
@@ -235,6 +263,12 @@
               <option value="light">Light</option>
               <option value="dark">Dark</option>
             </select>
+          </div>
+
+          <div class="settings-group">
+            <label class="settings-label" for="settingStaleWhitelist">Stale-tab whitelist</label>
+            <p class="settings-hint">Domains here never get the stale dot or appear in <strong>Sweep</strong>. One domain per line (e.g. <code>mail.google.com</code>, <code>slack.com</code>).</p>
+            <textarea id="settingStaleWhitelist" class="settings-input" rows="4" placeholder="mail.google.com&#10;slack.com&#10;calendar.google.com" style="font-family: monospace; resize: vertical;"></textarea>
           </div>
 
           <div class="settings-group">
@@ -354,11 +388,12 @@
      ================================================================ -->
   <div class="palette-overlay" id="paletteOverlay" style="display:none">
     <div class="palette" id="palette">
-      <input type="text" id="paletteInput" class="palette-input" placeholder="Jump to tab..." autocomplete="off" spellcheck="false">
+      <input type="text" id="paletteInput" class="palette-input" placeholder="Jump to tab... (type > for commands)" autocomplete="off" spellcheck="false">
       <div class="palette-results" id="paletteResults"></div>
       <div class="palette-hint">
+        <span><kbd>&gt;</kbd> commands</span>
         <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
-        <span><kbd>↵</kbd> jump</span>
+        <span><kbd>↵</kbd> run</span>
         <span><kbd>esc</kbd> close</span>
       </div>
     </div>
