@@ -165,13 +165,16 @@ header {
   border: none;
   cursor: pointer;
   color: var(--muted);
-  font-size: 14px;
-  padding: 2px 4px;
-  border-radius: 3px;
-  transition: color 0.15s;
+  padding: 4px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
 }
 
 .pomodoro-btn:hover {
+  background: var(--warm-gray);
   color: var(--ink);
 }
 
