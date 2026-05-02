@@ -1392,6 +1392,36 @@ function checkTabOutDupes() {
    and renders a card per domain.
    ---------------------------------------------------------------- */
 
+// Masonry — measure each domain card's natural height and assign a
+// grid-row span so short cards pack into the gaps left by tall cards.
+// Container uses grid-auto-rows: 1px + grid-auto-flow: dense in CSS.
+function applyDomainMasonry() {
+  const container = document.getElementById('openTabsMissions');
+  if (!container) return;
+  const cards = container.querySelectorAll('.mission-card');
+  for (const card of cards) {
+    card.style.gridRowEnd = '';
+  }
+  // Force a reflow before measuring (clearing the prior span can change height)
+  for (const card of cards) {
+    const rect = card.getBoundingClientRect();
+    // 1px row + 0px row-gap; cards include their own 12px margin-bottom in
+    // the measured height, so we just round up to the nearest row.
+    const span = Math.ceil(rect.height);
+    card.style.gridRowEnd = `span ${span}`;
+  }
+}
+
+// Re-pack on window resize (column count may change at breakpoints)
+let masonryResizeRaf = null;
+window.addEventListener('resize', () => {
+  if (masonryResizeRaf) cancelAnimationFrame(masonryResizeRaf);
+  masonryResizeRaf = requestAnimationFrame(() => {
+    masonryResizeRaf = null;
+    applyDomainMasonry();
+  });
+});
+
 // Live inline filter for the open-tabs grid. Matches against visible chip
 // text + tab URL + domain name. Doesn't reveal chips hidden inside the
 // overflow ("+N more") section — those become visible when the user expands.
@@ -2276,19 +2306,14 @@ async function refreshDynamicContent() {
     groupMap['__landing-pages__'] = { domain: '__landing-pages__', tabs: landingTabs };
   }
 
-  // Sort groups: landing pages first, then domains from landing page sites
-  // (e.g. x.com, mail.google.com) so they're easy to close, then the rest
-  // sorted by tab count.
-  const landingHostnames = new Set(LANDING_PAGE_PATTERNS.map(p => p.hostname));
+  // Sort: the combined "Homepages" group always pins to the top, then every
+  // other domain by tab count desc. Largest cards rendering first lets the
+  // masonry layout below give them their own columns instead of wedging a
+  // 1-tab card next to them.
   domainGroups = Object.values(groupMap).sort((a, b) => {
     const aIsLanding = a.domain === '__landing-pages__';
     const bIsLanding = b.domain === '__landing-pages__';
     if (aIsLanding !== bIsLanding) return aIsLanding ? -1 : 1;
-
-    const aIsPriority = landingHostnames.has(a.domain);
-    const bIsPriority = landingHostnames.has(b.domain);
-    if (aIsPriority !== bIsPriority) return aIsPriority ? -1 : 1;
-
     return b.tabs.length - a.tabs.length;
   });
 
@@ -2305,6 +2330,8 @@ async function refreshDynamicContent() {
       .join('');
     openTabsSection.style.display = 'block';
     applyOpenTabsFilter();
+    // Wait for layout to settle before measuring heights
+    requestAnimationFrame(() => requestAnimationFrame(applyDomainMasonry));
   } else if (openTabsSection) {
     openTabsSection.style.display = 'none';
   }
