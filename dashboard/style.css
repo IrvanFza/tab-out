@@ -438,62 +438,26 @@ header {
 }
 
 /* ---- Mission Cards ---- */
-/* CSS-columns masonry — simple Pinterest-style flow. Cards keep their own
-   .mission-card display:flex so internal layout stays correct. */
+/* JS-driven masonry — cards are bucketed into the shortest column at render
+   time (see layoutMissionsMasonry in app.js). The CSS just renders the
+   columns side by side and stacks cards within each one. */
 .missions {
-  column-width: 280px;
-  column-gap: 12px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
   margin-bottom: 40px;
 }
 
+.missions-column {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .missions .mission-card {
-  break-inside: avoid;
-  -webkit-column-break-inside: avoid;
-  page-break-inside: avoid;
-  margin: 0 0 12px 0;
-}
-
-/* Compact 1-tab cards — hide the redundant "1 tab open" badge and the
-   right-side tab counter, tighten padding, and slim the gap between the
-   domain header and the single chip below it. The chip itself carries
-   the page title; the header carries the domain name; everything else
-   was empty space in a card with one row of content. */
-.missions .mission-card-single {
-  padding: 8px 10px;
-  gap: 4px;
-}
-
-.missions .mission-card-single .mission-content {
-  gap: 4px;
-}
-
-.missions .mission-card-single .open-tabs-badge {
-  display: none;
-}
-
-.missions .mission-card-single .mission-meta {
-  display: none;
-}
-
-.missions .mission-card-single .mission-top {
-  padding: 0;
   margin: 0;
-}
-
-.missions .mission-card-single .mission-name {
-  font-size: 12px;
-  color: var(--muted);
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 500;
-}
-
-.missions .mission-card-single .actions {
-  display: none;
-}
-
-.missions .mission-card-single .page-chip {
-  padding: 4px 8px;
 }
 
 .mission-card {
@@ -640,6 +604,8 @@ header {
   align-items: center;
   gap: 8px;
   line-height: 1.4;
+  min-height: 36px;
+  box-sizing: border-box;
 }
 
 .page-chip:last-child,
@@ -655,15 +621,14 @@ header {
   border-radius: 2px;
 }
 
-/* Title text — wraps naturally, no truncation */
+/* Title text — single-line truncation so every row has a uniform height
+   regardless of how long the page title is */
 .chip-text {
   flex: 1;
   min-width: 0;
-  /* Show up to 2 lines, then ellipsis */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Duplicate badge */
@@ -2497,57 +2462,60 @@ body.animations-off *::after {
   background: var(--card-bg);
   border: 1px solid var(--warm-gray);
   border-radius: 10px;
-  padding: 14px 18px 12px;
+  padding: 16px 22px 14px;
   overflow-x: auto;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
 }
 
 .heatmap-months {
   display: grid;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--muted);
-  margin-left: 28px;
-  margin-bottom: 4px;
-  gap: 2px;
+  margin-left: 32px;
+  margin-bottom: 6px;
+  gap: 3px;
 }
 
 .heatmap-months span {
-  height: 12px;
-  line-height: 12px;
+  height: 14px;
+  line-height: 14px;
   white-space: nowrap;
 }
 
 .heatmap-grid-wrap {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: flex-start;
 }
 
 .heatmap-days-label {
   display: grid;
-  grid-template-rows: repeat(7, 11px);
-  gap: 2px;
-  font-size: 9px;
+  grid-template-rows: repeat(7, 14px);
+  gap: 3px;
+  font-size: 10px;
   color: var(--muted);
-  width: 22px;
+  width: 24px;
   padding-top: 1px;
 }
 
 .heatmap-days-label span {
-  line-height: 11px;
-  height: 11px;
+  line-height: 14px;
+  height: 14px;
 }
 
 .heatmap-grid {
   display: grid;
   grid-auto-flow: row;
-  grid-template-rows: repeat(7, 11px);
-  gap: 2px;
+  grid-template-rows: repeat(7, 14px);
+  gap: 3px;
 }
 
 .heatmap-cell {
-  width: 11px;
-  height: 11px;
-  border-radius: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
   background: var(--warm-gray);
   cursor: pointer;
   transition: outline 0.1s;

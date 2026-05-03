@@ -534,6 +534,14 @@ const insertDailyStatIfMissing = db.prepare(`
   VALUES (:day, :tabs_opened, :tabs_closed, :domains_json)
 `);
 
+// Replace-mode insert: overwrites existing rows. Used by re-backfills that
+// have a more accurate per-visit count than what was previously stored.
+// Callers must guard against clobbering today's live event counters.
+const replaceDailyStat = db.prepare(`
+  INSERT OR REPLACE INTO daily_stats (day, tabs_opened, tabs_closed, domains_json)
+  VALUES (:day, :tabs_opened, :tabs_closed, :domains_json)
+`);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // clearAllMissions — function helper
 //
@@ -611,4 +619,5 @@ module.exports = {
   getDailyStat,     // ({ day })
   getDailyStatsRange, // ({ start, end }) → array of rows
   insertDailyStatIfMissing, // ({ day, tabs_opened, tabs_closed, domains_json })
+  replaceDailyStat,         // ({ day, tabs_opened, tabs_closed, domains_json })
 };

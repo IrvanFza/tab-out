@@ -22,6 +22,12 @@ const fallback = document.getElementById('fallback');
 fetch('http://localhost:3456', { mode: 'no-cors' })
   .then(() => {
     // Server is up — keep the iframe visible (it's already loading)
+    // Kick off a one-time history backfill in the background so the
+    // activity heatmap reflects the user's real browsing past, not just
+    // events recorded since Tab Out was installed. Runs from the new-tab
+    // page (rather than the service worker) so it triggers reliably on
+    // every dashboard open without depending on onInstalled/onStartup.
+    backfillHistoryIfNeeded();
   })
   .catch(() => {
     // Server is down — hide the iframe and reveal the human-readable fallback
@@ -357,4 +363,119 @@ async function handleCloseTabsExact(urls = []) {
     await chrome.tabs.remove(matchingIds);
   }
   return { closedCount: matchingIds.length };
+}
+
+// ─── History backfill ────────────────────────────────────────────────────────
+// Pulls the user's chrome.history visits (last ~365 days) and aggregates them
+// into daily_stats so the heatmap reflects their actual browsing past, not
+// just events recorded since Tab Out was installed.
+//
+// This runs from the new-tab page (rather than the service worker) so it
+// triggers reliably whenever the user opens a new tab — no dependency on
+// onInstalled/onStartup, which can miss in-flight code updates.
+//
+// Versioned: bump BACKFILL_VERSION whenever the aggregation logic changes
+// so existing installs re-run with the better numbers. v2 switched from
+// "one event per HistoryItem at lastVisitTime" (which dramatically
+// undercounts active users) to fetching real per-visit timestamps via
+// chrome.history.getVisits, and uses the server's replace mode to overwrite
+// previously-undercounted historical rows.
+
+const BACKFILL_VERSION = 3;
+let backfillRunning = false;
+
+async function backfillHistoryIfNeeded() {
+  if (backfillRunning) return;
+  backfillRunning = true;
+  try {
+    if (!chrome.history || !chrome.history.search || !chrome.history.getVisits) return;
+
+    const stored = await chrome.storage.local.get('historyBackfillVersion');
+    if (stored.historyBackfillVersion === BACKFILL_VERSION) return;
+
+    console.log('[tab-out] running history backfill v' + BACKFILL_VERSION + '...');
+
+    const startTime = Date.now() - 365 * 24 * 60 * 60 * 1000;
+    const items = await chrome.history.search({
+      text: '',
+      startTime,
+      maxResults: 100000,
+    });
+    if (!Array.isArray(items) || items.length === 0) {
+      await chrome.storage.local.set({ historyBackfillVersion: BACKFILL_VERSION });
+      console.log('[tab-out] history backfill: no items returned');
+      return;
+    }
+
+    // Aggregate: per-day visit count + per-domain counts. For URLs visited
+    // more than once, resolve real per-visit timestamps via
+    // chrome.history.getVisits so each visit is counted on the correct day.
+    // URLs with a single visit skip the extra round-trip.
+    const byDay = {};
+    const bumpDay = (timestamp, host) => {
+      if (!timestamp || timestamp < startTime) return;
+      const day = new Date(timestamp).toISOString().slice(0, 10);
+      if (!byDay[day]) byDay[day] = { opens: 0, domains: {} };
+      byDay[day].opens += 1;
+      if (host) byDay[day].domains[host] = (byDay[day].domains[host] || 0) + 1;
+    };
+
+    let multiVisitFetched = 0;
+    for (const item of items) {
+      let host = null;
+      try { host = new URL(item.url).hostname; } catch { /* skip */ }
+      const visitCount = item.visitCount || 0;
+      if (visitCount <= 1) {
+        bumpDay(item.lastVisitTime, host);
+        continue;
+      }
+      try {
+        const visits = await chrome.history.getVisits({ url: item.url });
+        multiVisitFetched += 1;
+        if (Array.isArray(visits) && visits.length > 0) {
+          for (const v of visits) bumpDay(v.visitTime, host);
+        } else {
+          bumpDay(item.lastVisitTime, host);
+        }
+      } catch {
+        bumpDay(item.lastVisitTime, host);
+      }
+    }
+
+    const days = Object.entries(byDay).map(([day, agg]) => ({
+      day,
+      opens: agg.opens,
+      closes: 0,                // history doesn't track tab closes
+      domains: agg.domains,
+    }));
+
+    const res = await fetch('http://localhost:3456/api/stats/backfill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days, replace: true }),
+    });
+    if (res.ok) {
+      const summary = await res.json().catch(() => ({}));
+      console.log(
+        '[tab-out] history backfill v' + BACKFILL_VERSION + ' wrote ' +
+        (summary.inserted ?? '?') + ' of ' + days.length + ' days (' +
+        items.length + ' URLs scanned, ' + multiVisitFetched + ' multi-visit lookups)'
+      );
+      await chrome.storage.local.set({ historyBackfillVersion: BACKFILL_VERSION });
+      // Tell the dashboard the heatmap data is fresh so it can re-render
+      // without the user having to open another new tab.
+      try {
+        frame.contentWindow.postMessage(
+          { type: 'historyBackfillComplete', daysWritten: summary.inserted || 0 },
+          'http://localhost:3456'
+        );
+      } catch { /* iframe may be gone */ }
+    } else {
+      console.warn('[tab-out] history backfill: server returned', res.status);
+    }
+  } catch (err) {
+    console.warn('[tab-out] history backfill failed:', err && err.message);
+  } finally {
+    backfillRunning = false;
+  }
 }

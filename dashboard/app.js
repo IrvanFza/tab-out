@@ -1757,7 +1757,12 @@ function renderDomainCard(group, groupIndex) {
       uniqueTabs.push(tab);
     }
   }
-  const visibleTabs = uniqueTabs.slice(0, 8);
+  // Cap visible chips so a single very-active domain doesn't tower over
+  // the masonry. Anything past the cap collapses into a "+N more" chip,
+  // and the shortest-column packer fills the leftover column space with
+  // single-tab cards instead.
+  const VISIBLE_CHIP_LIMIT = 5;
+  const visibleTabs = uniqueTabs.slice(0, VISIBLE_CHIP_LIMIT);
   const extraCount = uniqueTabs.length - visibleTabs.length;
   const pageChips = visibleTabs.map(tab => {
     let label = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), group.domain);
@@ -1797,7 +1802,7 @@ function renderDomainCard(group, groupIndex) {
         </button>
       </div>
     </div>`;
-  }).join('') + (extraCount > 0 ? buildOverflowChips(uniqueTabs.slice(8), urlCounts) : '');
+  }).join('') + (extraCount > 0 ? buildOverflowChips(uniqueTabs.slice(VISIBLE_CHIP_LIMIT), urlCounts) : '');
 
   // Use amber status bar if there are duplicates
   const statusBarClass = hasDupes ? 'active' : 'neutral';
@@ -1832,6 +1837,9 @@ function renderDomainCard(group, groupIndex) {
   // of vertical space when every 1-tab domain has a full header + padding
   // around what is essentially one chip.
   const singleClass = tabCount === 1 ? ' mission-card-single' : '';
+  // Multi-tab cards are the visual anchors of the masonry layout. The CSS
+  // lets them grow vertically when they're alone in a column shorter than
+  // its neighbours, so column heights line up instead of leaving a stub.
   return `
     <div class="mission-card domain-card${collapsedClass}${singleClass} ${hasDupes ? 'has-amber-bar' : 'has-neutral-bar'}" data-domain-id="${stableId}">
       <div class="status-bar"${statusBarStyle}></div>
@@ -1851,6 +1859,162 @@ function renderDomainCard(group, groupIndex) {
       </div>
     </div>`;
 }
+
+/* ----------------------------------------------------------------
+   MISSIONS MASONRY LAYOUT
+
+   CSS-columns balanced packing puts a 1-tab card next to the tall Claude
+   card to even out the column heights — but visually that wastes a whole
+   column on a tiny chip and looks unbalanced when the right columns also
+   have room. Instead, we render a true Pinterest-style masonry: render
+   each card once into a flat container, measure its height, then bucket
+   it into the currently-shortest column. Tall cards naturally end up
+   alone in their own column when no shorter card can balance them.
+   ---------------------------------------------------------------- */
+const COLUMN_TARGET_WIDTH = 280;
+const COLUMN_GAP = 12;
+
+function computeColumnCount(container) {
+  let width = container.clientWidth || container.getBoundingClientRect().width || 0;
+  // If the container itself is unsized (e.g. parent is briefly display:none),
+  // walk up to the nearest sized ancestor so we don't collapse to a single
+  // column. Worst-case fall back to the viewport, minus the page padding.
+  if (width <= 0) {
+    let p = container.parentElement;
+    while (p && width <= 0) {
+      width = p.clientWidth || p.getBoundingClientRect().width || 0;
+      p = p.parentElement;
+    }
+  }
+  if (width <= 0) width = Math.max(0, window.innerWidth - 64);
+  const count = Math.floor((width + COLUMN_GAP) / (COLUMN_TARGET_WIDTH + COLUMN_GAP));
+  return Math.max(1, count);
+}
+
+function layoutMissionsMasonry(container, groups) {
+  if (!container) return;
+  if (!groups || groups.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const cardsHtml = groups.map((g, idx) => renderDomainCard(g, idx));
+  const colCount = computeColumnCount(container);
+
+  // Single column — skip the measurement pass entirely.
+  if (colCount === 1) {
+    container.innerHTML = `<div class="missions-column">${cardsHtml.join('')}</div>`;
+    return;
+  }
+
+  // Render cards once into a hidden probe to measure their actual heights,
+  // including title wrap, action buttons, and "+N more" overflow.
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;width:' +
+    Math.floor((container.clientWidth - COLUMN_GAP * (colCount - 1)) / colCount) + 'px;';
+  probe.innerHTML = cardsHtml.join('');
+  container.appendChild(probe);
+  const heights = Array.from(probe.children).map(el => el.getBoundingClientRect().height);
+  container.removeChild(probe);
+
+  // Two-phase distribution:
+  //   1. Compute per-column TARGET COUNTS so the edge columns each get
+  //      floor(N / cols) cards and the middle column(s) absorb everything
+  //      else — gives the "tall middle, light edges" shape the user asked
+  //      for (e.g. 11 cards across 3 columns → [3, 5, 3]).
+  //   2. ROUND-ROBIN the multi-tab cards across columns first, so the
+  //      visually heavy cards anchor different columns instead of all
+  //      stacking on the left. Then drop the singles into whatever slots
+  //      remain, left to right.
+  const effectiveColCount = Math.min(colCount, cardsHtml.length);
+  if (effectiveColCount <= 1) {
+    container.innerHTML = `<div class="missions-column">${cardsHtml.join('')}</div>`;
+    return;
+  }
+
+  const targetCounts = Array(effectiveColCount).fill(0);
+  if (effectiveColCount === 2) {
+    targetCounts[0] = Math.ceil(cardsHtml.length / 2);
+    targetCounts[1] = cardsHtml.length - targetCounts[0];
+  } else {
+    const edgeCount = Math.floor(cardsHtml.length / effectiveColCount);
+    targetCounts[0] = edgeCount;
+    targetCounts[effectiveColCount - 1] = edgeCount;
+    let remaining = cardsHtml.length - edgeCount * 2;
+    const middleCount = effectiveColCount - 2;
+    const perMiddle = Math.floor(remaining / middleCount);
+    for (let c = 1; c < effectiveColCount - 1; c++) targetCounts[c] = perMiddle;
+    let middleExtras = remaining - perMiddle * middleCount;
+    for (let c = 1; c < effectiveColCount - 1 && middleExtras > 0; c++, middleExtras--) {
+      targetCounts[c] += 1;
+    }
+  }
+
+  const cols = Array.from({ length: effectiveColCount }, (_, i) => ({
+    items: [],
+    remainingSlots: targetCounts[i],
+  }));
+
+  // Split cards into anchors (multi-tab) and fillers (single-tab).
+  const anchorIndices = [];
+  const fillerIndices = [];
+  for (let i = 0; i < groups.length; i++) {
+    if ((groups[i].tabs || []).length > 1) anchorIndices.push(i);
+    else fillerIndices.push(i);
+  }
+
+  // Phase A: round-robin anchor cards across columns. If the next column
+  // is already full, skip ahead to the next one with room.
+  let colCursor = 0;
+  for (const idx of anchorIndices) {
+    let placed = false;
+    for (let attempt = 0; attempt < effectiveColCount; attempt++) {
+      const c = (colCursor + attempt) % effectiveColCount;
+      if (cols[c].remainingSlots > 0) {
+        cols[c].items.push(cardsHtml[idx]);
+        cols[c].remainingSlots--;
+        colCursor = (c + 1) % effectiveColCount;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) break; // Should never happen — sums match by construction.
+  }
+
+  // Phase B: drop fillers (single-tab cards) into remaining slots, left
+  // to right. Singles stack underneath whatever anchor landed in their
+  // column.
+  let fillerCursor = 0;
+  for (let c = 0; c < effectiveColCount && fillerCursor < fillerIndices.length; c++) {
+    while (cols[c].remainingSlots > 0 && fillerCursor < fillerIndices.length) {
+      cols[c].items.push(cardsHtml[fillerIndices[fillerCursor]]);
+      cols[c].remainingSlots--;
+      fillerCursor++;
+    }
+  }
+
+  // (heights[] is left unused below — it was only needed by the previous
+  // shortest-column packer; the deterministic distribution above doesn't
+  // need per-card measurements.)
+  void heights;
+
+  container.innerHTML = cols
+    .map(col => `<div class="missions-column">${col.items.join('')}</div>`)
+    .join('');
+}
+
+// Re-layout on window resize so the column count tracks the viewport.
+let _missionsResizeTimer = null;
+window.addEventListener('resize', () => {
+  if (_missionsResizeTimer) clearTimeout(_missionsResizeTimer);
+  _missionsResizeTimer = setTimeout(() => {
+    const el = document.getElementById('openTabsMissions');
+    if (el && domainGroups.length > 0) {
+      layoutMissionsMasonry(el, domainGroups);
+      applyOpenTabsFilter();
+    }
+  }, 120);
+});
 
 // Per-domain collapse state, persisted in localStorage
 function getCollapsedSet() {
@@ -2299,10 +2463,11 @@ async function refreshDynamicContent() {
 
   if (domainGroups.length > 0 && openTabsSection) {
     openTabsSectionCount.innerHTML = `${domainGroups.length} domain${domainGroups.length !== 1 ? 's' : ''} &nbsp;&middot;&nbsp; <button class="action-btn close-tabs" data-action="close-all-open-tabs" style="font-size:11px;padding:3px 10px;">${ICONS.close} Close all ${realTabs.length} tabs</button>`;
-    openTabsMissionsEl.innerHTML = domainGroups
-      .map((g, idx) => renderDomainCard(g, idx))
-      .join('');
+    // Make the section visible BEFORE laying out so the masonry can measure
+    // the container's real width — when display:none, clientWidth is 0 and
+    // the layout collapses to a single column.
     openTabsSection.style.display = 'block';
+    layoutMissionsMasonry(openTabsMissionsEl, domainGroups);
     applyOpenTabsFilter();
   } else if (openTabsSection) {
     openTabsSection.style.display = 'none';
@@ -3911,7 +4076,7 @@ function renderHeatmap() {
   }
   if (months) {
     months.innerHTML = '';
-    months.style.gridTemplateColumns = `repeat(${weeks}, 13px)`;
+    months.style.gridTemplateColumns = `repeat(${weeks}, 14px)`;
     for (let col = 0; col < weeks; col++) {
       const m = monthLabels.find(x => x.col === col);
       const span = document.createElement('span');
@@ -3922,7 +4087,7 @@ function renderHeatmap() {
 
   // Render the grid: 7 rows × weeks columns, column-major fill so each column
   // is a Sunday→Saturday week.
-  grid.style.gridTemplateColumns = `repeat(${weeks}, 13px)`;
+  grid.style.gridTemplateColumns = `repeat(${weeks}, 14px)`;
   grid.innerHTML = '';
   // Build per-day cells in row-major order so CSS grid places them correctly:
   //  cells must be ordered row-by-row (all of row 0 across columns, then row 1, ...)
@@ -4540,6 +4705,21 @@ function initCommandPalette() {
    ---------------------------------------------------------------- */
 renderDashboard();
 // checkForUpdates();
+
+/* ----------------------------------------------------------------
+   HISTORY BACKFILL HOOK — listen for the new-tab page telling us
+   it just finished aggregating chrome.history into daily_stats, and
+   refresh the heatmap so the user sees the populated calendar
+   without having to open another tab.
+   ---------------------------------------------------------------- */
+window.addEventListener('message', async (event) => {
+  const data = event.data || {};
+  if (data.type !== 'historyBackfillComplete') return;
+  try {
+    await fetchHeatmap();
+    renderHeatmap();
+  } catch { /* heatmap may be hidden in settings — ignore */ }
+});
 
 /* ----------------------------------------------------------------
    AUTO-REFRESH — refresh dynamic content every 30 seconds

@@ -52,6 +52,7 @@ const {
   markSnoozeWoken,
   deleteSnooze,
   upsertDailyStat,
+  replaceDailyStat,
   getDailyStat,
   getDailyStatsRange,
   insertDailyStatIfMissing,
@@ -662,25 +663,33 @@ router.get('/stats/day/:day', (req, res) => {
   }
 });
 
-// One-shot bulk backfill from chrome.history. Body: { days: [{day, opens,
-// closes, domains}] }. Only fills days that don't already have a row so we
-// never clobber live event counters.
+// Bulk backfill from chrome.history. Body: { days: [{day, opens, closes,
+// domains}], replace?: boolean }. Default mode (replace omitted/false) only
+// fills days that don't already have a row, so live event counters are
+// preserved. When replace=true, historical days are overwritten with the
+// fresher numbers — but TODAY is never touched, since the running browser is
+// still emitting live events into it.
 router.post('/stats/backfill', (req, res) => {
   try {
-    const days = (req.body && req.body.days) || [];
+    const body = req.body || {};
+    const days = body.days || [];
+    const replace = body.replace === true;
     if (!Array.isArray(days)) return res.status(400).json({ error: 'days array required' });
-    let inserted = 0;
+    const today = new Date().toISOString().slice(0, 10);
+    let written = 0;
     for (const d of days) {
       if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d.day)) continue;
-      const result = insertDailyStatIfMissing.run({
+      const useReplace = replace && d.day < today;
+      const stmt = useReplace ? replaceDailyStat : insertDailyStatIfMissing;
+      const result = stmt.run({
         day: d.day,
         tabs_opened: Number(d.opens) || 0,
         tabs_closed: Number(d.closes) || 0,
         domains_json: JSON.stringify(d.domains || {}),
       });
-      if (result.changes > 0) inserted += 1;
+      if (result.changes > 0) written += 1;
     }
-    res.json({ success: true, inserted, total: days.length });
+    res.json({ success: true, inserted: written, total: days.length, replace });
   } catch (err) {
     console.error('[routes] POST /stats/backfill failed:', err.message);
     res.status(500).json({ error: 'Failed to backfill' });
